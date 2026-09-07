@@ -1,13 +1,15 @@
 """
-Gold Chart Analyzer PRO — V4.1
+Gold Chart Analyzer PRO — V4.2
 XAUUSD SNRZ Visual Analyzer
 24/7 Telegram Bot
 
 Flow:
 1. H1/H4 -> HTF structure + VS/VR + Zone
 2. M1/M5 -> Pullback + confirmation
-3. Deterministic engine validates the AI result
-4. Strong BUY/SELL only when every mandatory filter passes
+3. Gemini analyzes visible chart evidence
+4. Deterministic engine validates the AI result
+5. Strong BUY/SELL only when every mandatory filter passes
+6. Gemini temporary errors automatically retry
 """
 
 import json
@@ -26,10 +28,16 @@ from google.genai import types
 # CONFIG
 # ============================================================
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+TELEGRAM_BOT_TOKEN = os.getenv(
+    "TELEGRAM_BOT_TOKEN",
+    "",
+).strip()
 
-# Keep the model configurable through GitHub Actions secrets/env.
+GEMINI_API_KEY = os.getenv(
+    "GEMINI_API_KEY",
+    "",
+).strip()
+
 GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
     "gemini-3.6-flash",
@@ -37,14 +45,20 @@ GEMINI_MODEL = os.getenv(
 
 ADMIN_ID = 5874840448
 
+# Strong signal filters
 MIN_STRONG_SCORE = 80.0
 MIN_STRONG_CONFIDENCE = 80.0
 MIN_RR = 2.0
+
 # Gemini reliability
 GEMINI_MAX_RETRIES = 4
 GEMINI_RETRY_BASE_DELAY = 3
 
+# Telegram
+POLL_TIMEOUT = 30
+TELEGRAM_MESSAGE_LIMIT = 4000
 
+# Files
 ALLOWED_USERS_FILE = "allowed_users.json"
 IMAGE_DIR = "chart_images"
 
@@ -71,7 +85,9 @@ if not GEMINI_API_KEY:
     logger.warning("GEMINI_API_KEY is missing.")
 else:
     try:
-        gemini = genai.Client(api_key=GEMINI_API_KEY)
+        gemini = genai.Client(
+            api_key=GEMINI_API_KEY,
+        )
         logger.info("Gemini client initialized.")
     except Exception as exc:
         logger.exception(
@@ -172,7 +188,9 @@ def telegram_request(
     timeout: int = 40,
 ) -> Optional[Dict[str, Any]]:
     if not TELEGRAM_API:
-        logger.error("TELEGRAM_BOT_TOKEN is missing.")
+        logger.error(
+            "TELEGRAM_BOT_TOKEN is missing."
+        )
         return None
 
     try:
@@ -321,10 +339,15 @@ if str(ADMIN_ID) not in ALLOWED_USERS:
         "name": "ADMIN",
         "approved": True,
     }
-    save_allowed_users(ALLOWED_USERS)
+
+    save_allowed_users(
+        ALLOWED_USERS
+    )
 
 
-def is_allowed(user_id: Any) -> bool:
+def is_allowed(
+    user_id: Any,
+) -> bool:
     return (
         str(user_id) == str(ADMIN_ID)
         or str(user_id) in ALLOWED_USERS
@@ -412,7 +435,9 @@ def handle_admin_command(
             "approved": True,
         }
 
-        save_allowed_users(ALLOWED_USERS)
+        save_allowed_users(
+            ALLOWED_USERS
+        )
 
         PENDING_USERS.pop(
             target,
@@ -448,7 +473,9 @@ def handle_admin_command(
             None,
         )
 
-        save_allowed_users(ALLOWED_USERS)
+        save_allowed_users(
+            ALLOWED_USERS
+        )
 
         send_message(
             chat_id,
@@ -465,13 +492,20 @@ def handle_admin_command(
             )
             return True
 
-        lines = ["👥 ALLOWED USERS", ""]
+        lines = [
+            "👥 ALLOWED USERS",
+            "",
+        ]
 
         for uid, info in ALLOWED_USERS.items():
+            if not isinstance(info, dict):
+                info = {}
+
             name = clean_text(
                 info.get("name"),
                 "",
             )
+
             lines.append(
                 f"• {uid} — {name}"
             )
@@ -501,6 +535,7 @@ def handle_admin_command(
                 info.get("first_name"),
                 "",
             )
+
             username = clean_text(
                 info.get("username"),
                 "",
@@ -531,7 +566,9 @@ def handle_admin_command(
         broadcast_text = parts[1]
         sent = 0
 
-        for uid in list(ALLOWED_USERS.keys()):
+        for uid in list(
+            ALLOWED_USERS.keys()
+        ):
             result = telegram_request(
                 "sendMessage",
                 {
@@ -573,8 +610,9 @@ VISUAL DISCIPLINE
 - Never assume a historical breakout.
 - Current price is NOT proof of a historical breakout.
 - A wick/touch/rejection is NOT automatically a breakout.
-- If evidence is unclear, report it as unclear.
 - Numerical levels must come from visible chart evidence.
+- If evidence is unclear, report false/unclear.
+- Do not manufacture exact prices.
 
 ==================================================
 VS
@@ -706,16 +744,37 @@ Use it for:
 - PO2
 - confirmation
 
-Do NOT invent anything.
-
-For VS/VR, report the visible numerical levels involved in the sequence.
-
 IMPORTANT:
-If an exact historical break PRICE cannot be read confidently,
-set break_price to null but set break_confirmed=true ONLY if
-the historical breakout is visibly confirmed by candles.
+- Inspect only visible candles.
+- Do not invent candles.
+- Do not infer hidden historical candles.
+- Do not use current price as proof of an old breakout.
+- Historical breakout must be visibly confirmed.
+- Exact numerical prices must come from visible chart evidence.
 
-Return ONLY JSON using this structure:
+For VS:
+
+Original Support
+-> UP
+-> NEW Resistance after Support
+-> UP again
+-> SAME NEW Resistance broken
+-> confirmation above Resistance
+
+For VR:
+
+Original Resistance
+-> DOWN
+-> NEW Support after Resistance
+-> DOWN again
+-> SAME NEW Support broken
+-> confirmation below Support
+
+If exact historical break PRICE cannot be confidently read:
+- break_price = null
+- break_confirmed may still be true ONLY when the historical breakout candle is visibly confirmed.
+
+Return ONLY JSON.
 
 {
   "symbol": "XAUUSD",
@@ -831,7 +890,9 @@ Return ONLY JSON using this structure:
 # JSON PARSING
 # ============================================================
 
-def clean_json_text(text: str) -> str:
+def clean_json_text(
+    text: str,
+) -> str:
     if not text:
         return ""
 
@@ -860,13 +921,19 @@ def clean_json_text(text: str) -> str:
     return cleaned
 
 
-def parse_json_response(text: str) -> Dict[str, Any]:
+def parse_json_response(
+    text: str,
+) -> Dict[str, Any]:
     cleaned = clean_json_text(text)
 
     try:
         data = json.loads(cleaned)
 
-        return data if isinstance(data, dict) else {}
+        return (
+            data
+            if isinstance(data, dict)
+            else {}
+        )
 
     except json.JSONDecodeError as exc:
         logger.error(
@@ -968,25 +1035,16 @@ def structure_evidence_score(
 
 
 # ============================================================
-# V4.1 VS VALIDATOR
+# VS VALIDATOR
 # ============================================================
 
 def verify_vs_v41(
     structure: Any,
 ) -> Tuple[bool, str]:
-    """
-    Validate VS.
 
-    Required:
-    - Original Support
-    - NEW Resistance above Support
-    - historical breakout confirmation
-
-    Exact break_price is preferred but NOT mandatory if
-    the visual model explicitly confirms the historical break.
-    """
-
-    s = normalize_structure(structure)
+    s = normalize_structure(
+        structure
+    )
 
     original = s["original_level"]
     validation = s["validation_level"]
@@ -994,10 +1052,14 @@ def verify_vs_v41(
     ev = s["evidence"]
 
     if original is None:
-        return False, "VS: original Support missing."
+        return False, (
+            "VS: original Support missing."
+        )
 
     if validation is None:
-        return False, "VS: NEW Resistance missing."
+        return False, (
+            "VS: NEW Resistance missing."
+        )
 
     if validation <= original:
         return False, (
@@ -1007,7 +1069,16 @@ def verify_vs_v41(
     if not safe_bool(
         ev.get("original_level_visible")
     ):
-        return False, "VS: Support visibility not confirmed."
+        return False, (
+            "VS: Support visibility not confirmed."
+        )
+
+    if not safe_bool(
+        ev.get("first_move_confirmed")
+    ):
+        return False, (
+            "VS: first UP move not confirmed."
+        )
 
     if not safe_bool(
         ev.get("new_level_formed_after_original")
@@ -1017,16 +1088,12 @@ def verify_vs_v41(
         )
 
     if not safe_bool(
-        ev.get("first_move_confirmed")
-    ):
-        return False, "VS: first UP move not confirmed."
-
-    if not safe_bool(
         ev.get("second_move_confirmed")
     ):
-        return False, "VS: second UP move not confirmed."
+        return False, (
+            "VS: second UP move not confirmed."
+        )
 
-    # Historical break must be explicitly confirmed.
     if not safe_bool(
         ev.get("same_level_broken")
     ):
@@ -1041,7 +1108,6 @@ def verify_vs_v41(
             "VS: breakout candle/body confirmation missing."
         )
 
-    # If break price exists, enforce chronology.
     if break_price is not None:
         if break_price <= validation:
             return False, (
@@ -1052,25 +1118,16 @@ def verify_vs_v41(
 
 
 # ============================================================
-# V4.1 VR VALIDATOR
+# VR VALIDATOR
 # ============================================================
 
 def verify_vr_v41(
     structure: Any,
 ) -> Tuple[bool, str]:
-    """
-    Validate VR.
 
-    Required:
-    - Original Resistance
-    - NEW Support below Resistance
-    - historical breakout confirmation
-
-    Exact break_price is preferred but NOT mandatory if
-    the visual model explicitly confirms the historical break.
-    """
-
-    s = normalize_structure(structure)
+    s = normalize_structure(
+        structure
+    )
 
     original = s["original_level"]
     validation = s["validation_level"]
@@ -1078,10 +1135,14 @@ def verify_vr_v41(
     ev = s["evidence"]
 
     if original is None:
-        return False, "VR: original Resistance missing."
+        return False, (
+            "VR: original Resistance missing."
+        )
 
     if validation is None:
-        return False, "VR: NEW Support missing."
+        return False, (
+            "VR: NEW Support missing."
+        )
 
     if validation >= original:
         return False, (
@@ -1091,7 +1152,16 @@ def verify_vr_v41(
     if not safe_bool(
         ev.get("original_level_visible")
     ):
-        return False, "VR: Resistance visibility not confirmed."
+        return False, (
+            "VR: Resistance visibility not confirmed."
+        )
+
+    if not safe_bool(
+        ev.get("first_move_confirmed")
+    ):
+        return False, (
+            "VR: first DOWN move not confirmed."
+        )
 
     if not safe_bool(
         ev.get("new_level_formed_after_original")
@@ -1101,14 +1171,11 @@ def verify_vr_v41(
         )
 
     if not safe_bool(
-        ev.get("first_move_confirmed")
-    ):
-        return False, "VR: first DOWN move not confirmed."
-
-    if not safe_bool(
         ev.get("second_move_confirmed")
     ):
-        return False, "VR: second DOWN move not confirmed."
+        return False, (
+            "VR: second DOWN move not confirmed."
+        )
 
     if not safe_bool(
         ev.get("same_level_broken")
@@ -1136,6 +1203,7 @@ def verify_vr_v41(
 def get_valid_structures(
     data: Dict[str, Any],
 ) -> Dict[str, Any]:
+
     structures = data.get(
         "structures",
         {},
@@ -1152,8 +1220,13 @@ def get_valid_structures(
         structures.get("vr", {})
     )
 
-    vs_valid, vs_reason = verify_vs_v41(vs)
-    vr_valid, vr_reason = verify_vr_v41(vr)
+    vs_valid, vs_reason = verify_vs_v41(
+        vs
+    )
+
+    vr_valid, vr_reason = verify_vr_v41(
+        vr
+    )
 
     return {
         "vs": vs,
@@ -1172,7 +1245,12 @@ def get_valid_structures(
 def zone_is_valid(
     data: Dict[str, Any],
     side: str,
-) -> Tuple[bool, Optional[float], Optional[float]]:
+) -> Tuple[
+    bool,
+    Optional[float],
+    Optional[float],
+]:
+
     zones = data.get(
         "zones",
         {},
@@ -1229,7 +1307,6 @@ def zone_is_valid(
     if body is None or previous_body is None:
         return False, high, low
 
-    # The selected candle must be the shorter-body candle.
     if body >= previous_body:
         return False, high, low
 
@@ -1243,6 +1320,7 @@ def zone_is_valid(
 def pullback_is_valid(
     data: Dict[str, Any],
 ) -> bool:
+
     pullback = data.get(
         "pullback",
         {},
@@ -1292,13 +1370,23 @@ SELL_CONFIRMATIONS = {
 def normalize_confirmation_name(
     name: Any,
 ) -> str:
+
     if not name:
         return ""
 
-    value = str(name).strip().upper()
+    value = str(
+        name
+    ).strip().upper()
 
-    value = value.replace(" ", "")
-    value = value.replace("-", "")
+    value = value.replace(
+        " ",
+        "",
+    )
+
+    value = value.replace(
+        "-",
+        "",
+    )
 
     return value
 
@@ -1306,12 +1394,16 @@ def normalize_confirmation_name(
 def confirmation_is_valid(
     data: Dict[str, Any],
 ) -> Tuple[bool, str, str]:
+
     confirmation = data.get(
         "confirmation",
         {},
     )
 
-    if not isinstance(confirmation, dict):
+    if not isinstance(
+        confirmation,
+        dict,
+    ):
         return False, "", ""
 
     found = safe_bool(
@@ -1335,14 +1427,22 @@ def confirmation_is_valid(
         confirmation.get("name")
     )
 
-    if not found or not complete or not after_pullback:
+    if (
+        not found
+        or not complete
+        or not after_pullback
+    ):
         return False, name, side
 
     if side == "BUY":
-        valid = name in BUY_CONFIRMATIONS
+        valid = (
+            name in BUY_CONFIRMATIONS
+        )
 
     elif side == "SELL":
-        valid = name in SELL_CONFIRMATIONS
+        valid = (
+            name in SELL_CONFIRMATIONS
+        )
 
     else:
         valid = False
@@ -1359,9 +1459,18 @@ def calculate_rr(
     sl: Any,
     tp1: Any,
 ) -> Optional[float]:
-    entry_value = safe_float(entry)
-    sl_value = safe_float(sl)
-    tp_value = safe_float(tp1)
+
+    entry_value = safe_float(
+        entry
+    )
+
+    sl_value = safe_float(
+        sl
+    )
+
+    tp_value = safe_float(
+        tp1
+    )
 
     if (
         entry_value is None
@@ -1391,20 +1500,34 @@ def calculate_rr(
 def strong_signal_engine(
     data: Dict[str, Any],
 ) -> Dict[str, Any]:
-    if not isinstance(data, dict):
+
+    if not isinstance(
+        data,
+        dict,
+    ):
         data = {}
 
-    structures = get_valid_structures(data)
+    structures = get_valid_structures(
+        data
+    )
 
-    vs_valid = structures["vs_valid"]
-    vr_valid = structures["vr_valid"]
+    vs_valid = structures[
+        "vs_valid"
+    ]
+
+    vr_valid = structures[
+        "vr_valid"
+    ]
 
     trade = data.get(
         "trade",
         {},
     )
 
-    if not isinstance(trade, dict):
+    if not isinstance(
+        trade,
+        dict,
+    ):
         trade = {}
 
     raw_signal = clean_text(
@@ -1419,13 +1542,19 @@ def strong_signal_engine(
     }:
         raw_signal = "WAIT"
 
-    score = safe_float(
-        trade.get("score")
-    ) or 0.0
+    score = (
+        safe_float(
+            trade.get("score")
+        )
+        or 0.0
+    )
 
-    confidence = safe_float(
-        trade.get("confidence")
-    ) or 0.0
+    confidence = (
+        safe_float(
+            trade.get("confidence")
+        )
+        or 0.0
+    )
 
     entry = safe_float(
         trade.get("entry")
@@ -1448,31 +1577,37 @@ def strong_signal_engine(
     )
 
     # --------------------------------------------------------
-    # Structure
+    # STRUCTURE
     # --------------------------------------------------------
 
     if raw_signal == "BUY":
+
         structure_valid = vs_valid
         structure_name = "VS"
 
     elif raw_signal == "SELL":
+
         structure_valid = vr_valid
         structure_name = "VR"
 
     else:
+
         structure_valid = (
-            vs_valid or vr_valid
+            vs_valid
+            or vr_valid
         )
 
         if vs_valid:
             structure_name = "VS"
+
         elif vr_valid:
             structure_name = "VR"
+
         else:
             structure_name = ""
 
     # --------------------------------------------------------
-    # Zone
+    # ZONE
     # --------------------------------------------------------
 
     zone_valid = False
@@ -1483,6 +1618,7 @@ def strong_signal_engine(
         "BUY",
         "SELL",
     }:
+
         zone_valid, zone_high, zone_low = (
             zone_is_valid(
                 data,
@@ -1491,40 +1627,52 @@ def strong_signal_engine(
         )
 
     else:
+
         if vs_valid:
-            zone_valid, zone_high, zone_low = (
-                zone_is_valid(
-                    data,
-                    "BUY",
-                )
+            (
+                zone_valid,
+                zone_high,
+                zone_low,
+            ) = zone_is_valid(
+                data,
+                "BUY",
             )
 
-        if not zone_valid and vr_valid:
-            zone_valid, zone_high, zone_low = (
-                zone_is_valid(
-                    data,
-                    "SELL",
-                )
+        if (
+            not zone_valid
+            and vr_valid
+        ):
+            (
+                zone_valid,
+                zone_high,
+                zone_low,
+            ) = zone_is_valid(
+                data,
+                "SELL",
             )
 
     # --------------------------------------------------------
-    # Pullback
+    # PULLBACK
     # --------------------------------------------------------
 
-    pullback_valid = pullback_is_valid(data)
+    pullback_valid = (
+        pullback_is_valid(data)
+    )
 
     # --------------------------------------------------------
-    # Confirmation
+    # CONFIRMATION
     # --------------------------------------------------------
 
     (
         confirmation_valid,
         confirmation_name,
         confirmation_side,
-    ) = confirmation_is_valid(data)
+    ) = confirmation_is_valid(
+        data
+    )
 
     # --------------------------------------------------------
-    # HTF / LTF agreement
+    # HTF / LTF AGREEMENT
     # --------------------------------------------------------
 
     agreement = safe_bool(
@@ -1544,46 +1692,72 @@ def strong_signal_engine(
     )
 
     # --------------------------------------------------------
-    # Side consistency
+    # SIDE CONSISTENCY
     # --------------------------------------------------------
 
     side_consistent = True
 
     if raw_signal == "BUY":
         side_consistent = (
-            confirmation_side == "BUY"
+            confirmation_side
+            == "BUY"
         )
 
     elif raw_signal == "SELL":
         side_consistent = (
-            confirmation_side == "SELL"
+            confirmation_side
+            == "SELL"
         )
 
     # --------------------------------------------------------
-    # Mandatory checks
+    # MANDATORY CHECKS
     # --------------------------------------------------------
 
     checks = {
         "structure": structure_valid,
+
         "zone": zone_valid,
+
         "pullback": pullback_valid,
+
         "confirmation": confirmation_valid,
+
         "agreement": agreement,
+
         "score": (
-            score >= MIN_STRONG_SCORE
+            score
+            >= MIN_STRONG_SCORE
         ),
+
         "confidence": (
-            confidence >= MIN_STRONG_CONFIDENCE
+            confidence
+            >= MIN_STRONG_CONFIDENCE
         ),
+
         "rr": (
             rr is not None
             and rr >= MIN_RR
         ),
-        "entry": entry is not None,
-        "sl": sl is not None,
-        "tp1": tp1 is not None,
-        "no_rejection": not rejection,
-        "side_consistent": side_consistent,
+
+        "entry": (
+            entry is not None
+        ),
+
+        "sl": (
+            sl is not None
+        ),
+
+        "tp1": (
+            tp1 is not None
+        ),
+
+        "no_rejection": (
+            not rejection
+        ),
+
+        "side_consistent": (
+            side_consistent
+        ),
     }
 
     all_valid = all(
@@ -1591,7 +1765,7 @@ def strong_signal_engine(
     )
 
     # --------------------------------------------------------
-    # Final signal
+    # FINAL SIGNAL
     # --------------------------------------------------------
 
     if (
@@ -1602,11 +1776,12 @@ def strong_signal_engine(
         }
     ):
         final_signal = raw_signal
+
     else:
         final_signal = "WAIT"
 
     # --------------------------------------------------------
-    # WAIT reason
+    # WAIT REASON
     # --------------------------------------------------------
 
     missing = []
@@ -1617,10 +1792,14 @@ def strong_signal_engine(
         )
 
     if not zone_valid:
-        missing.append("Zone")
+        missing.append(
+            "Zone"
+        )
 
     if not pullback_valid:
-        missing.append("Pullback/Retest")
+        missing.append(
+            "Pullback/Retest"
+        )
 
     if not confirmation_valid:
         missing.append(
@@ -1637,24 +1816,36 @@ def strong_signal_engine(
             "Score ≥ 80"
         )
 
-    if confidence < MIN_STRONG_CONFIDENCE:
+    if (
+        confidence
+        < MIN_STRONG_CONFIDENCE
+    ):
         missing.append(
             "Confidence ≥ 80%"
         )
 
-    if rr is None or rr < MIN_RR:
+    if (
+        rr is None
+        or rr < MIN_RR
+    ):
         missing.append(
             "RR ≥ 1:2"
         )
 
     if entry is None:
-        missing.append("Entry")
+        missing.append(
+            "Entry"
+        )
 
     if sl is None:
-        missing.append("SL")
+        missing.append(
+            "SL"
+        )
 
     if tp1 is None:
-        missing.append("TP1")
+        missing.append(
+            "TP1"
+        )
 
     if rejection:
         missing.append(
@@ -1667,26 +1858,33 @@ def strong_signal_engine(
         )
 
     if final_signal == "WAIT":
+
         if vs_valid or vr_valid:
+
             if zone_valid:
+
                 if not pullback_valid:
                     wait_for = (
-                        f"Price Pullback/Retest "
+                        "Price Pullback/Retest "
                         f"to {structure_name} Zone"
                     )
+
                 elif not confirmation_valid:
                     wait_for = (
                         "M1/M5 Confirmation "
                         "after Pullback"
                     )
+
                 else:
                     wait_for = (
                         "Complete Strong Signal filters"
                     )
+
             else:
                 wait_for = (
                     f"{structure_name} Zone"
                 )
+
         else:
             wait_for = (
                 "Complete valid VS/VR structure "
@@ -1700,6 +1898,7 @@ def strong_signal_engine(
 
     result["engine"] = {
         "vs_valid": vs_valid,
+
         "vr_valid": vr_valid,
 
         "vs_reason": structures[
@@ -1723,39 +1922,48 @@ def strong_signal_engine(
 
         "missing": missing,
 
-        "side_consistent": side_consistent,
+        "side_consistent": (
+            side_consistent
+        ),
     }
 
     result["trade"] = {
         "signal": final_signal,
+
         "score": round(
             score,
             1,
         ),
+
         "confidence": round(
             confidence,
             1,
         ),
+
         "entry": (
             entry
             if final_signal != "WAIT"
             else None
         ),
+
         "sl": (
             sl
             if final_signal != "WAIT"
             else None
         ),
+
         "tp1": (
             tp1
             if final_signal != "WAIT"
             else None
         ),
+
         "tp2": (
             tp2
             if final_signal != "WAIT"
             else None
         ),
+
         "rr": (
             round(
                 rr,
@@ -1767,6 +1975,7 @@ def strong_signal_engine(
             )
             else None
         ),
+
         "rejection": rejection,
     }
 
@@ -1776,17 +1985,51 @@ def strong_signal_engine(
 
 
 # ============================================================
+# GEMINI TEMPORARY ERROR DETECTION
+# ============================================================
+
+def is_gemini_temporary_error(
+    error: Exception,
+) -> bool:
+
+    error_text = str(
+        error
+    ).lower()
+
+    temporary_keywords = (
+        "503",
+        "unavailable",
+        "high demand",
+        "overloaded",
+        "temporarily",
+        "deadline exceeded",
+        "429",
+        "resource exhausted",
+        "rate limit",
+        "too many requests",
+        "service unavailable",
+    )
+
+    return any(
+        keyword in error_text
+        for keyword in temporary_keywords
+    )
+
+
+# ============================================================
 # GEMINI IMAGE ANALYSIS
 # ============================================================
 
-```python
 def analyze_two_charts(
     zone_path: str,
     confirmation_path: str,
 ) -> Dict[str, Any]:
+
     if gemini is None:
         return {
-            "error": "Gemini client is not initialized."
+            "error": (
+                "Gemini client is not initialized."
+            )
         }
 
     # --------------------------------------------------------
@@ -1794,20 +2037,29 @@ def analyze_two_charts(
     # --------------------------------------------------------
 
     try:
-        with open(zone_path, "rb") as file:
+        with open(
+            zone_path,
+            "rb",
+        ) as file:
             zone_bytes = file.read()
 
-        with open(confirmation_path, "rb") as file:
+        with open(
+            confirmation_path,
+            "rb",
+        ) as file:
             confirmation_bytes = file.read()
 
     except OSError as exc:
+
         logger.error(
             "Could not read chart images: %s",
             exc,
         )
 
         return {
-            "error": "Could not read chart images."
+            "error": (
+                "Could not read chart images."
+            )
         }
 
     # --------------------------------------------------------
@@ -1821,10 +2073,12 @@ def analyze_two_charts(
                 types.Part.from_text(
                     text=USER_ANALYSIS_PROMPT,
                 ),
+
                 types.Part.from_bytes(
                     data=zone_bytes,
                     mime_type="image/jpeg",
                 ),
+
                 types.Part.from_bytes(
                     data=confirmation_bytes,
                     mime_type="image/jpeg",
@@ -1834,30 +2088,38 @@ def analyze_two_charts(
     ]
 
     # --------------------------------------------------------
-    # RETRY LOOP
+    # RETRY
     # --------------------------------------------------------
 
-    last_error = ""
+    last_error = (
+        "Unknown Gemini error."
+    )
 
     for attempt in range(
         1,
         GEMINI_MAX_RETRIES + 1,
     ):
+
         try:
+
             logger.info(
-                "Gemini analysis attempt %s/%s using model=%s",
+                "Gemini analysis attempt %s/%s | model=%s",
                 attempt,
                 GEMINI_MAX_RETRIES,
                 GEMINI_MODEL,
             )
 
-            response = gemini.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    temperature=0.1,
-                ),
+            response = (
+                gemini.models.generate_content(
+                    model=GEMINI_MODEL,
+                    contents=contents,
+                    config=(
+                        types.GenerateContentConfig(
+                            system_instruction=SYSTEM_PROMPT,
+                            temperature=0.1,
+                        )
+                    ),
+                )
             )
 
             text = getattr(
@@ -1867,6 +2129,7 @@ def analyze_two_charts(
             )
 
             if not text:
+
                 last_error = (
                     "Gemini returned an empty response."
                 )
@@ -1877,15 +2140,21 @@ def analyze_two_charts(
                 )
 
             else:
-                data = parse_json_response(text)
+
+                data = parse_json_response(
+                    text
+                )
 
                 if data:
+
                     logger.info(
                         "Gemini analysis successful on attempt %s.",
                         attempt,
                     )
 
-                    return strong_signal_engine(data)
+                    return strong_signal_engine(
+                        data
+                    )
 
                 last_error = (
                     "Gemini returned invalid JSON."
@@ -1897,30 +2166,13 @@ def analyze_two_charts(
                 )
 
         except Exception as exc:
+
             last_error = str(exc)
 
-            error_text = str(exc).lower()
+            if not is_gemini_temporary_error(
+                exc
+            ):
 
-            # ------------------------------------------------
-            # TEMPORARY GEMINI ERRORS
-            # ------------------------------------------------
-
-            is_temporary = any(
-                keyword in error_text
-                for keyword in (
-                    "503",
-                    "unavailable",
-                    "high demand",
-                    "overloaded",
-                    "temporarily",
-                    "deadline exceeded",
-                    "429",
-                    "resource exhausted",
-                    "rate limit",
-                )
-            )
-
-            if not is_temporary:
                 logger.exception(
                     "Gemini permanent analysis error."
                 )
@@ -1930,7 +2182,8 @@ def analyze_two_charts(
                 }
 
             logger.warning(
-                "Gemini temporary error on attempt %s/%s: %s",
+                "Gemini temporary error "
+                "on attempt %s/%s: %s",
                 attempt,
                 GEMINI_MAX_RETRIES,
                 exc,
@@ -1941,9 +2194,13 @@ def analyze_two_charts(
         # ----------------------------------------------------
 
         if attempt < GEMINI_MAX_RETRIES:
+
             delay = (
                 GEMINI_RETRY_BASE_DELAY
-                * (2 ** (attempt - 1))
+                * (
+                    2
+                    ** (attempt - 1)
+                )
             )
 
             logger.info(
@@ -1951,25 +2208,144 @@ def analyze_two_charts(
                 delay,
             )
 
-            time.sleep(delay)
+            time.sleep(
+                delay
+            )
 
     # --------------------------------------------------------
     # ALL RETRIES FAILED
     # --------------------------------------------------------
 
     logger.error(
-        "Gemini failed after %s attempts. Last error: %s",
+        "Gemini failed after %s attempts. "
+        "Last error: %s",
         GEMINI_MAX_RETRIES,
         last_error,
     )
 
     return {
         "error": (
-            "Gemini کاتییەکەی بارەکەی زۆرە (503). "
-            "دووبارە هەوڵ بدە."
+            "Gemini کاتییەکەی بارەکەی زۆرە "
+            "(503/429). تکایە دووبارە هەوڵ بدە."
         )
     }
-```
+
+
+# ============================================================
+# FORMAT STRUCTURE
+# ============================================================
+
+def format_structure(
+    data: Dict[str, Any],
+) -> str:
+
+    structures = data.get(
+        "structures",
+        {},
+    )
+
+    if not isinstance(
+        structures,
+        dict,
+    ):
+        structures = {}
+
+    vs = normalize_structure(
+        structures.get(
+            "vs",
+            {},
+        )
+    )
+
+    vr = normalize_structure(
+        structures.get(
+            "vr",
+            {},
+        )
+    )
+
+    engine = data.get(
+        "engine",
+        {},
+    )
+
+    if not isinstance(
+        engine,
+        dict,
+    ):
+        engine = {}
+
+    vs_valid = safe_bool(
+        engine.get(
+            "vs_valid"
+        )
+    )
+
+    vr_valid = safe_bool(
+        engine.get(
+            "vr_valid"
+        )
+    )
+
+    lines = [
+        "🧱 STRUCTURE",
+        "━━━━━━━━━━━━━━",
+    ]
+
+    if vs_valid:
+
+        lines.extend([
+            "🟢 VS: VALID",
+
+            (
+                "Support: "
+                f"{format_price(vs['original_level'])}"
+            ),
+
+            (
+                "NEW Resistance: "
+                f"{format_price(vs['validation_level'])}"
+            ),
+
+            (
+                "Break: "
+                f"{format_price(vs['break_price'])}"
+            ),
+        ])
+
+    else:
+        lines.append(
+            "⚪ VS: NOT VALID"
+        )
+
+    if vr_valid:
+
+        lines.extend([
+            "🔴 VR: VALID",
+
+            (
+                "Resistance: "
+                f"{format_price(vr['original_level'])}"
+            ),
+
+            (
+                "NEW Support: "
+                f"{format_price(vr['validation_level'])}"
+            ),
+
+            (
+                "Break: "
+                f"{format_price(vr['break_price'])}"
+            ),
+        ])
+
+    else:
+        lines.append(
+            "⚪ VR: NOT VALID"
+        )
+
+    return "\n".join(lines)
+
 
 # ============================================================
 # FORMAT SIGNAL
@@ -1978,12 +2354,16 @@ def analyze_two_charts(
 def format_signal(
     data: Dict[str, Any],
 ) -> str:
+
     trade = data.get(
         "trade",
         {},
     )
 
-    if not isinstance(trade, dict):
+    if not isinstance(
+        trade,
+        dict,
+    ):
         trade = {}
 
     signal = clean_text(
@@ -1991,13 +2371,19 @@ def format_signal(
         "WAIT",
     ).upper()
 
-    score = safe_float(
-        trade.get("score")
-    ) or 0.0
+    score = (
+        safe_float(
+            trade.get("score")
+        )
+        or 0.0
+    )
 
-    confidence = safe_float(
-        trade.get("confidence")
-    ) or 0.0
+    confidence = (
+        safe_float(
+            trade.get("confidence")
+        )
+        or 0.0
+    )
 
     entry = safe_float(
         trade.get("entry")
@@ -2024,7 +2410,10 @@ def format_signal(
         {},
     )
 
-    if not isinstance(market, dict):
+    if not isinstance(
+        market,
+        dict,
+    ):
         market = {}
 
     trend = clean_text(
@@ -2042,7 +2431,10 @@ def format_signal(
         {},
     )
 
-    if not isinstance(zones, dict):
+    if not isinstance(
+        zones,
+        dict,
+    ):
         zones = {}
 
     engine = data.get(
@@ -2050,7 +2442,10 @@ def format_signal(
         {},
     )
 
-    if not isinstance(engine, dict):
+    if not isinstance(
+        engine,
+        dict,
+    ):
         engine = {}
 
     vs_valid = safe_bool(
@@ -2062,17 +2457,21 @@ def format_signal(
     )
 
     # --------------------------------------------------------
-    # Active zone
+    # ACTIVE ZONE
     # --------------------------------------------------------
 
     zone_name = "N/A"
     zone_high = None
     zone_low = None
 
-    if signal == "BUY" or (
-        signal == "WAIT"
-        and vs_valid
+    if (
+        signal == "BUY"
+        or (
+            signal == "WAIT"
+            and vs_valid
+        )
     ):
+
         zone_name = "VS"
 
         zone = zones.get(
@@ -2080,18 +2479,26 @@ def format_signal(
             {},
         )
 
-        if isinstance(zone, dict):
+        if isinstance(
+            zone,
+            dict,
+        ):
             zone_high = safe_float(
                 zone.get("high")
             )
+
             zone_low = safe_float(
                 zone.get("low")
             )
 
-    elif signal == "SELL" or (
-        signal == "WAIT"
-        and vr_valid
+    elif (
+        signal == "SELL"
+        or (
+            signal == "WAIT"
+            and vr_valid
+        )
     ):
+
         zone_name = "VR"
 
         zone = zones.get(
@@ -2099,10 +2506,14 @@ def format_signal(
             {},
         )
 
-        if isinstance(zone, dict):
+        if isinstance(
+            zone,
+            dict,
+        ):
             zone_high = safe_float(
                 zone.get("high")
             )
+
             zone_low = safe_float(
                 zone.get("low")
             )
@@ -2112,7 +2523,10 @@ def format_signal(
         {},
     )
 
-    if not isinstance(confirmation, dict):
+    if not isinstance(
+        confirmation,
+        dict,
+    ):
         confirmation = {}
 
     confirmation_name = clean_text(
@@ -2125,7 +2539,10 @@ def format_signal(
         {},
     )
 
-    if not isinstance(pullback, dict):
+    if not isinstance(
+        pullback,
+        dict,
+    ):
         pullback = {}
 
     pullback_occurred = safe_bool(
@@ -2137,6 +2554,7 @@ def format_signal(
     # ========================================================
 
     if signal == "WAIT":
+
         lines = [
             "🟡 WAIT",
             "━━━━━━━━━━━━━━",
@@ -2165,12 +2583,16 @@ def format_signal(
             zone_high is not None
             and zone_low is not None
         ):
+
             lines.append(
                 f"{format_price(zone_low)} - "
                 f"{format_price(zone_high)}"
             )
+
         else:
-            lines.append("N/A")
+            lines.append(
+                "N/A"
+            )
 
         lines.extend([
             "",
@@ -2268,7 +2690,9 @@ def download_telegram_photo(
     file_id: str,
     destination: str,
 ) -> bool:
+
     try:
+
         file_response = telegram_request(
             "getFile",
             {
@@ -2303,14 +2727,17 @@ def download_telegram_photo(
         )
 
         if response.status_code != 200:
+
             logger.error(
                 "Photo download failed: %s",
                 response.status_code,
             )
+
             return False
 
         os.makedirs(
-            os.path.dirname(destination) or ".",
+            os.path.dirname(destination)
+            or ".",
             exist_ok=True,
         )
 
@@ -2318,15 +2745,19 @@ def download_telegram_photo(
             destination,
             "wb",
         ) as file:
-            file.write(response.content)
+            file.write(
+                response.content
+            )
 
         return True
 
     except Exception as exc:
+
         logger.error(
             "Photo download error: %s",
             exc,
         )
+
         return False
 
 
@@ -2337,9 +2768,11 @@ def download_telegram_photo(
 def get_session(
     user_id: Any,
 ) -> Dict[str, Any]:
+
     uid = str(user_id)
 
     if uid not in USER_SESSIONS:
+
         USER_SESSIONS[uid] = {
             "zone_image": None,
             "confirmation_image": None,
@@ -2352,6 +2785,7 @@ def get_session(
 def reset_session(
     user_id: Any,
 ) -> None:
+
     USER_SESSIONS[str(user_id)] = {
         "zone_image": None,
         "confirmation_image": None,
@@ -2366,6 +2800,7 @@ def reset_session(
 def handle_photo(
     message: Dict[str, Any],
 ) -> None:
+
     chat = message.get(
         "chat",
         {},
@@ -2376,13 +2811,28 @@ def handle_photo(
         {},
     )
 
-    chat_id = chat.get("id")
-    user_id = user.get("id")
+    chat_id = chat.get(
+        "id"
+    )
 
-    if chat_id is None or user_id is None:
+    user_id = user.get(
+        "id"
+    )
+
+    if (
+        chat_id is None
+        or user_id is None
+    ):
         return
 
-    if not is_allowed(user_id):
+    # --------------------------------------------------------
+    # ACCESS
+    # --------------------------------------------------------
+
+    if not is_allowed(
+        user_id
+    ):
+
         request_access(
             user_id,
             user.get("username"),
@@ -2414,7 +2864,9 @@ def handle_photo(
     if not file_id:
         return
 
-    session = get_session(user_id)
+    session = get_session(
+        user_id
+    )
 
     os.makedirs(
         IMAGE_DIR,
@@ -2430,29 +2882,41 @@ def handle_photo(
         file_id,
         filename,
     ):
+
         send_message(
             chat_id,
             "❌ وێنەکە نەتوانرا دابەزێنرێت.",
         )
+
         return
 
+    # --------------------------------------------------------
+    # FIRST IMAGE = HTF
+    # --------------------------------------------------------
+
     if session["zone_image"] is None:
+
         session["zone_image"] = filename
 
         send_message(
             chat_id,
             "🟢 وێنەی HTF وەرگیرا.\n\n"
-            "ئێستا وێنەی M1/M5 بنێرە بۆ Confirmation.",
+            "ئێستا وێنەی M1/M5 بنێرە "
+            "بۆ Pullback + Confirmation.",
         )
 
         return
+
+    # --------------------------------------------------------
+    # SECOND IMAGE = LTF
+    # --------------------------------------------------------
 
     session["confirmation_image"] = filename
 
     send_message(
         chat_id,
         "⏳ هەردوو وێنەکە وەرگیراون.\n"
-        "AI + V4.1 Engine شیکاری دەکەن...",
+        "AI + V4.2 SNRZ Engine شیکاری دەکەن...",
     )
 
     result = analyze_two_charts(
@@ -2460,22 +2924,39 @@ def handle_photo(
         session["confirmation_image"],
     )
 
+    # --------------------------------------------------------
+    # ERROR
+    # --------------------------------------------------------
+
     if result.get("error"):
+
         send_message(
             chat_id,
-            "❌ هەڵە لە شیکاری:\n"
-            + str(result["error"]),
+            "⚠️ کێشەی کاتی لە AI ڕوویدا.\n\n"
+            f"{result['error']}\n\n"
+            "📸 دووبارە هەردوو چارتەکە بنێرە.",
         )
 
-        reset_session(user_id)
+        reset_session(
+            user_id
+        )
+
         return
+
+    # --------------------------------------------------------
+    # RESULT
+    # --------------------------------------------------------
 
     send_message(
         chat_id,
-        format_signal(result),
+        format_signal(
+            result
+        ),
     )
 
-    reset_session(user_id)
+    reset_session(
+        user_id
+    )
 
 
 # ============================================================
@@ -2485,6 +2966,7 @@ def handle_photo(
 def handle_text(
     message: Dict[str, Any],
 ) -> None:
+
     chat = message.get(
         "chat",
         {},
@@ -2495,8 +2977,13 @@ def handle_text(
         {},
     )
 
-    chat_id = chat.get("id")
-    user_id = user.get("id")
+    chat_id = chat.get(
+        "id"
+    )
+
+    user_id = user.get(
+        "id"
+    )
 
     text = clean_text(
         message.get("text"),
@@ -2506,7 +2993,12 @@ def handle_text(
     if not text:
         return
 
+    # --------------------------------------------------------
+    # ADMIN COMMANDS
+    # --------------------------------------------------------
+
     if text.startswith("/"):
+
         if handle_admin_command(
             chat_id,
             user_id,
@@ -2514,7 +3006,14 @@ def handle_text(
         ):
             return
 
-    if not is_allowed(user_id):
+    # --------------------------------------------------------
+    # ACCESS
+    # --------------------------------------------------------
+
+    if not is_allowed(
+        user_id
+    ):
+
         request_access(
             user_id,
             user.get("username"),
@@ -2531,30 +3030,50 @@ def handle_text(
 
     command = text.lower().strip()
 
+    # --------------------------------------------------------
+    # START
+    # --------------------------------------------------------
+
     if command in {
         "/start",
         "start",
     }:
-        reset_session(user_id)
+
+        reset_session(
+            user_id
+        )
 
         send_message(
             chat_id,
             "🥇 Gold Chart Analyzer PRO\n\n"
-            "1️⃣ H1/H4 chart بنێرە بۆ VS/VR + Zone.\n"
-            "2️⃣ پاشان M1/M5 chart بنێرە بۆ Pullback + Confirmation.\n\n"
+
+            "1️⃣ H1/H4 chart بنێرە "
+            "بۆ VS/VR + Zone.\n\n"
+
+            "2️⃣ پاشان M1/M5 chart بنێرە "
+            "بۆ Pullback + Confirmation.\n\n"
+
             "BUY: RBS / SRR / I.VR / PO2\n"
             "SELL: SBR / RSS / I.VS / PO2\n\n"
-            "⚠️ Strong signal تەنها کاتێک دەردەچێت "
-            "کە هەموو مەرجەکان پڕ بن.",
+
+            "⚠️ Strong signal تەنها کاتێک "
+            "دەردەچێت کە هەموو مەرجەکان پڕ بن.",
         )
 
         return
+
+    # --------------------------------------------------------
+    # RESET
+    # --------------------------------------------------------
 
     if command in {
         "/reset",
         "reset",
     }:
-        reset_session(user_id)
+
+        reset_session(
+            user_id
+        )
 
         send_message(
             chat_id,
@@ -2562,6 +3081,10 @@ def handle_text(
         )
 
         return
+
+    # --------------------------------------------------------
+    # DEFAULT
+    # --------------------------------------------------------
 
     send_message(
         chat_id,
@@ -2576,28 +3099,46 @@ def handle_text(
 def handle_update(
     update: Dict[str, Any],
 ) -> None:
-    if not isinstance(update, dict):
+
+    if not isinstance(
+        update,
+        dict,
+    ):
         return
 
     message = update.get(
         "message"
     )
 
-    if isinstance(message, dict):
+    if isinstance(
+        message,
+        dict,
+    ):
+
         if message.get("photo"):
-            handle_photo(message)
+            handle_photo(
+                message
+            )
             return
 
         if message.get("text"):
-            handle_text(message)
+            handle_text(
+                message
+            )
             return
 
     callback = update.get(
         "callback_query"
     )
 
-    if isinstance(callback, dict):
-        callback_id = callback.get("id")
+    if isinstance(
+        callback,
+        dict,
+    ):
+
+        callback_id = callback.get(
+            "id"
+        )
 
         if callback_id:
             answer_callback(
@@ -2610,6 +3151,7 @@ def handle_update(
 # ============================================================
 
 def delete_webhook() -> None:
+
     telegram_request(
         "deleteWebhook",
         {
@@ -2621,6 +3163,7 @@ def delete_webhook() -> None:
 def get_updates(
     offset: Optional[int] = None,
 ) -> Optional[Dict[str, Any]]:
+
     payload: Dict[str, Any] = {
         "timeout": POLL_TIMEOUT,
         "allowed_updates": [
@@ -2639,21 +3182,32 @@ def get_updates(
     )
 
 
+# ============================================================
+# MAIN BOT LOOP
+# ============================================================
+
 def run_bot() -> None:
+
     logger.info(
-        "Starting Gold Chart Analyzer PRO V4.1..."
+        "Starting Gold Chart Analyzer PRO V4.2..."
     )
 
     if not TELEGRAM_BOT_TOKEN:
+
         logger.error(
-            "TELEGRAM_BOT_TOKEN is missing. Bot cannot start."
+            "TELEGRAM_BOT_TOKEN is missing. "
+            "Bot cannot start."
         )
+
         return
 
     if not GEMINI_API_KEY:
+
         logger.error(
-            "GEMINI_API_KEY is missing. Bot cannot analyze charts."
+            "GEMINI_API_KEY is missing. "
+            "Bot cannot analyze charts."
         )
+
         return
 
     delete_webhook()
@@ -2661,16 +3215,20 @@ def run_bot() -> None:
     offset = None
 
     while True:
+
         try:
+
             response = get_updates(
                 offset
             )
 
             if not response:
+
                 time.sleep(3)
                 continue
 
             if not response.get("ok"):
+
                 logger.error(
                     "Telegram getUpdates failed: %s",
                     response,
@@ -2685,33 +3243,55 @@ def run_bot() -> None:
             )
 
             for update in updates:
+
                 try:
+
                     update_id = update.get(
                         "update_id"
                     )
 
                     if update_id is not None:
-                        offset = update_id + 1
+                        offset = (
+                            update_id + 1
+                        )
 
-                    handle_update(update)
+                    handle_update(
+                        update
+                    )
 
                 except Exception:
+
                     logger.exception(
                         "Update handling error"
                     )
 
         except KeyboardInterrupt:
+
             logger.info(
                 "Bot stopped manually."
             )
+
             break
 
         except Exception:
+
             logger.exception(
                 "Polling loop error"
             )
 
             time.sleep(10)
+
+
+# ============================================================
+# COMPATIBILITY START FUNCTION
+# ============================================================
+
+def run() -> None:
+    """
+    Compatibility wrapper.
+    Prevents NameError if an old workflow calls run().
+    """
+    run_bot()
 
 
 # ============================================================
