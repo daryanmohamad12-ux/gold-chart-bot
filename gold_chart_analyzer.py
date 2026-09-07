@@ -1,8 +1,10 @@
-Gold Chart Analyzer PRO V4
+"""
+Gold Chart Analyzer PRO — V4
 =============================
 
 XAUUSD SNRZ Visual Analyzer
 24/7 Telegram Bot
+"""
 
 FLOW
 ----
