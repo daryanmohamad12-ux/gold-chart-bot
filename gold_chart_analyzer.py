@@ -7,7 +7,6 @@ XAUUSD SNRZ Visual Analyzer
 """
 
 FLOW
-----
 1. H1/H4 = HTF structure + VS/VR + Zone
 2. M1/M5 = LTF confirmation
 3. Pullback MUST happen before confirmation
