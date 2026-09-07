@@ -3200,6 +3200,77 @@ def format_signal(data):
 
     if signal != "WAIT":
 
+        text += f# ============================================================
+# FORMAT SIGNAL — SORANI KURDISH
+# ============================================================
+
+def format_signal(data):
+
+    signal = str(
+        data.get(
+            "signal",
+            "WAIT"
+        )
+    ).upper()
+
+    if signal == "BUY":
+        title = "🟢 سیگناڵی STRONG BUY"
+
+    elif signal == "SELL":
+        title = "🔴 سیگناڵی STRONG SELL"
+
+    else:
+        title = "🟡 چاوەڕوان بە"
+        signal = "WAIT"
+
+    zone_price = str(
+        data.get(
+            "zone_price",
+            "N/A"
+        )
+    ).strip()
+
+    if not zone_price:
+        zone_price = "N/A"
+
+    text = f"""
+{title}
+━━━━━━━━━━━━━━
+🥇 XAUUSD
+
+📊 خاڵ:
+{data.get("score", 0)}/100
+
+💪 دڵنیایی:
+{data.get("confidence", 0)}%
+
+📈 ئاراستە:
+{data.get("trend", "N/A")}
+
+🧠 پێکهاتە:
+{data.get("setup", "N/A")}
+
+🟦 Zone:
+{data.get("zone", "N/A")}
+
+📍 نرخی Zone:
+{zone_price}
+
+🔎 Zone ـەکانی HTF:
+{data.get("htf_zones", "N/A")}
+
+🟢 VS:
+{data.get("vs_detected", "N/A")}
+
+🔴 VR:
+{data.get("vr_detected", "N/A")}
+
+🔎 Confirmation:
+{data.get("confirmation", "N/A")}
+"""
+
+    if signal != "WAIT":
+
         text += f"""
 ━━━━━━━━━━━━━━
 🎯 Entry:
@@ -3221,25 +3292,23 @@ def format_signal(data):
 {data.get("rr", "N/A")}
 """
 
-
     text += f"""
 ━━━━━━━━━━━━━━
-🔎 هۆکار:
-{data.get("reasoning", "N/A")}
+🔎 هۆکاری شیکردنەوە:
+{data.get("reasoning", "هیچ زانیارییەک بەردەست نییە.")}
 
-✅ Checks:
-{data.get("checks", "N/A")}
+✅ پشکنینەکان:
+{data.get("checks", "هیچ زانیارییەک بەردەست نییە.")}
 """
-
 
     if signal == "WAIT":
 
         text += f"""
 ━━━━━━━━━━━━━━
-🚫 هۆکاری WAIT:
+🚫 هۆکاری چاوەڕوانبوون:
 {data.get(
     "rejection_reason",
-    "setup ـێکی بەهێز نەدۆزرایەوە."
+    "پێکهاتەیەکی بەهێزی SNRZ پشتڕاست نەکراوەتەوە."
 )}
 
 👀 چاوەڕێی چی بکەین؟
@@ -3253,13 +3322,11 @@ def format_signal(data):
 
         text += """
 ━━━━━━━━━━━━━━
-🟢 STRONG SNRZ setup
-هەموو rejection filter ـە سەرەکییەکان تێپەڕاند.
+🟢 پێکهاتەی STRONG SNRZ پشتڕاست کراوەتەوە.
 
-⚠️ ئەمە شیکردنەوەی تەکنیکییە؛
+⚠️ ئەمە تەنها شیکردنەوەی تەکنیکییە؛
 هیچ دڵنیاییەک بە قازانج نادات.
 """
-
 
     return text.strip()
 
