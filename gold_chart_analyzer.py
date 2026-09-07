@@ -4,55 +4,14 @@ Gold Chart Analyzer PRO — V4
 
 XAUUSD SNRZ Visual Analyzer
 24/7 Telegram Bot
-"""
 
 FLOW
+----
 1. H1/H4 = HTF structure + VS/VR + Zone
 2. M1/M5 = LTF confirmation
 3. Pullback MUST happen before confirmation
 4. Engine independently validates VS/VR evidence
 5. Strong BUY/SELL only when ALL filters pass
-
-IMPORTANT
----------
-VS:
-Support
- -> Up
- -> NEW Resistance after Support
- -> Up again
- -> Break SAME Resistance
- -> Original Support = VS
-
-VR:
-Resistance
- -> Down
- -> NEW Support after Resistance
- -> Down again
- -> Break SAME Support
- -> Original Resistance = VR
-
-ZONE
-----
-After valid VS/VR:
-- Find formation candle
-- Look at immediately previous candle
-- Compare BODY SIZE
-- Choose SHORTER body
-- Whole selected candle HIGH -> LOW = Zone
-
-NO ENGULFING ZONE RULE.
-
-ENTRY
------
-VALID VS/VR
- -> Zone
- -> Pullback / Retest
- -> M1/M5 confirmation
- -> Strong Signal filters
- -> Entry
-
-Technical terms remain English.
-Explanations are Kurdish Sorani.
 """
 
 import os
