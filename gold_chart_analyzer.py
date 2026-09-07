@@ -1539,13 +1539,23 @@ VR
 
 Only COMPLETED structures can be recorded as VS or VR.
 
-Then identify:
+For EVERY VS/VR candidate, you MUST explicitly prove:
 
-- strongest zone
-- nearest valid zone
-- current relevant zone
-- whether price is approaching, touching, inside,
-  or leaving the zone.
+- The original Support/Resistance
+- The NEW opposite level formed AFTER it
+- The second move in the same direction
+- The break of that SAME new opposite level
+- The complete sequence
+- Whether the break is confirmed
+- Whether the structure is valid
+
+If any part is missing or unclear:
+
+valid = false.
+
+Do NOT infer missing candles.
+
+Do NOT guess.
 
 ============================================================
 ZONE DETERMINATION — CRITICAL
@@ -1767,8 +1777,23 @@ Use EXACTLY these keys:
 
   "htf_zones": "...",
 
-  "vs_detected": "...",
-  "vr_detected": "...",
+  "vs_detected": {
+    "valid": false,
+    "original_level": "...",
+    "formation_candle": "...",
+    "validation_level": "...",
+    "sequence": "...",
+    "break_confirmed": false
+  },
+
+  "vr_detected": {
+    "valid": false,
+    "original_level": "...",
+    "formation_candle": "...",
+    "validation_level": "...",
+    "sequence": "...",
+    "break_confirmed": false
+  },
 
   "confirmation": "...",
 
@@ -1782,6 +1807,65 @@ Use EXACTLY these keys:
 
   "wait_for": "..."
 }
+
+============================================================
+VS / VR JSON REQUIREMENT
+============================================================
+
+For VS:
+
+"vs_detected": {
+  "valid": true,
+  "original_level": "original Support price/range",
+  "formation_candle": "description of original Support candle",
+  "validation_level": "NEW Resistance formed AFTER Support",
+  "sequence": "SUPPORT → UP → NEW RESISTANCE AFTER SUPPORT → UP AGAIN → BREAK SAME RESISTANCE",
+  "break_confirmed": true
+}
+
+For invalid VS:
+
+"vs_detected": {
+  "valid": false,
+  "original_level": "...",
+  "formation_candle": "...",
+  "validation_level": "N/A",
+  "sequence": "Incomplete VS structure",
+  "break_confirmed": false
+}
+
+For VR:
+
+"vr_detected": {
+  "valid": true,
+  "original_level": "original Resistance price/range",
+  "formation_candle": "description of original Resistance candle",
+  "validation_level": "NEW Support formed AFTER Resistance",
+  "sequence": "RESISTANCE → DOWN → NEW SUPPORT AFTER RESISTANCE → DOWN AGAIN → BREAK SAME SUPPORT",
+  "break_confirmed": true
+}
+
+For invalid VR:
+
+"vr_detected": {
+  "valid": false,
+  "original_level": "...",
+  "formation_candle": "...",
+  "validation_level": "N/A",
+  "sequence": "Incomplete VR structure",
+  "break_confirmed": false
+}
+
+IMPORTANT:
+
+Do NOT set valid=true unless the COMPLETE structure
+is visually proven.
+
+Do NOT use text labels alone.
+
+Do NOT call a normal Support VS.
+
+Do NOT call a normal Resistance VR.
 
 ============================================================
 LANGUAGE
@@ -2018,7 +2102,7 @@ def confirmation_is_valid(
 
 
 # ============================================================
-# VS / VR VALIDATION
+# STRICT VS / VR VALIDATION
 # ============================================================
 
 def validate_vs_vr(
@@ -2026,52 +2110,425 @@ def validate_vs_vr(
     signal
 ):
 
-    vs = str(
-        data.get(
-            "vs_detected",
-            ""
-        )
-    ).strip()
+    """
+    STRICT STRUCTURE VALIDATION.
 
-    vr = str(
-        data.get(
-            "vr_detected",
-            ""
-        )
-    ).strip()
+    VS:
+    SUPPORT
+    → UP
+    → NEW RESISTANCE AFTER SUPPORT
+    → UP AGAIN
+    → BREAK SAME RESISTANCE
+    → VALID VS
 
-    htf_zones = str(
-        data.get(
-            "htf_zones",
-            ""
-        )
-    ).strip()
+    VR:
+    RESISTANCE
+    → DOWN
+    → NEW SUPPORT AFTER RESISTANCE
+    → DOWN AGAIN
+    → BREAK SAME SUPPORT
+    → VALID VR
 
-    zone = str(
-        data.get(
-            "zone",
-            ""
-        )
-    ).strip()
+    Text labels alone are NEVER enough.
+    """
 
-    combined = (
-        f"{vs} {vr} "
-        f"{htf_zones} {zone}"
-    ).upper()
+    if signal not in (
+        "BUY",
+        "SELL"
+    ):
+
+        return False
+
+
+    # ========================================================
+    # BUY → VS ONLY
+    # ========================================================
 
     if signal == "BUY":
 
-        return (
-            "VS" in combined
-            or "I.VR" in combined
+        vs_data = data.get(
+            "vs_detected"
         )
+
+        if not isinstance(
+            vs_data,
+            dict
+        ):
+
+            return False
+
+
+        valid = (
+            vs_data.get(
+                "valid",
+                False
+            )
+            is True
+        )
+
+        break_confirmed = (
+            vs_data.get(
+                "break_confirmed",
+                False
+            )
+            is True
+        )
+
+
+        original_level = str(
+            vs_data.get(
+                "original_level",
+                ""
+            )
+        ).strip()
+
+
+        formation_candle = str(
+            vs_data.get(
+                "formation_candle",
+                ""
+            )
+        ).strip()
+
+
+        validation_level = str(
+            vs_data.get(
+                "validation_level",
+                ""
+            )
+        ).strip()
+
+
+        sequence = str(
+            vs_data.get(
+                "sequence",
+                ""
+            )
+        ).strip().upper()
+
+
+        if not valid:
+
+            return False
+
+
+        if not break_confirmed:
+
+            return False
+
+
+        if not original_level:
+
+            return False
+
+
+        if not formation_candle:
+
+            return False
+
+
+        if not validation_level:
+
+            return False
+
+
+        if validation_level.upper() in (
+            "N/A",
+            "NONE",
+            "UNKNOWN"
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # REQUIRED STRUCTURAL WORDS
+        # ----------------------------------------------------
+
+        required_words = [
+            "SUPPORT",
+            "RESISTANCE",
+            "BREAK"
+        ]
+
+        for word in required_words:
+
+            if word not in sequence:
+
+                return False
+
+
+        # ----------------------------------------------------
+        # REQUIRED ORDER
+        # ----------------------------------------------------
+
+        support_pos = sequence.find(
+            "SUPPORT"
+        )
+
+        resistance_pos = sequence.find(
+            "RESISTANCE"
+        )
+
+        break_pos = sequence.find(
+            "BREAK"
+        )
+
+
+        if support_pos == -1:
+
+            return False
+
+        if resistance_pos == -1:
+
+            return False
+
+        if break_pos == -1:
+
+            return False
+
+
+        if not (
+            support_pos
+            <
+            resistance_pos
+            <
+            break_pos
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # NEW RESISTANCE MUST BE AFTER SUPPORT
+        # ----------------------------------------------------
+
+        if (
+            "AFTER SUPPORT"
+            not in sequence
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # SECOND UP MOVE MUST EXIST
+        # ----------------------------------------------------
+
+        if "UP AGAIN" not in sequence:
+
+            return False
+
+
+        # ----------------------------------------------------
+        # SAME RESISTANCE MUST BE BROKEN
+        # ----------------------------------------------------
+
+        if (
+            "SAME RESISTANCE"
+            not in sequence
+        ):
+
+            return False
+
+
+        return True
+
+
+    # ========================================================
+    # SELL → VR ONLY
+    # ========================================================
 
     if signal == "SELL":
 
-        return (
-            "VR" in combined
-            or "I.VS" in combined
+        vr_data = data.get(
+            "vr_detected"
         )
+
+        if not isinstance(
+            vr_data,
+            dict
+        ):
+
+            return False
+
+
+        valid = (
+            vr_data.get(
+                "valid",
+                False
+            )
+            is True
+        )
+
+        break_confirmed = (
+            vr_data.get(
+                "break_confirmed",
+                False
+            )
+            is True
+        )
+
+
+        original_level = str(
+            vr_data.get(
+                "original_level",
+                ""
+            )
+        ).strip()
+
+
+        formation_candle = str(
+            vr_data.get(
+                "formation_candle",
+                ""
+            )
+        ).strip()
+
+
+        validation_level = str(
+            vr_data.get(
+                "validation_level",
+                ""
+            )
+        ).strip()
+
+
+        sequence = str(
+            vr_data.get(
+                "sequence",
+                ""
+            )
+        ).strip().upper()
+
+
+        if not valid:
+
+            return False
+
+
+        if not break_confirmed:
+
+            return False
+
+
+        if not original_level:
+
+            return False
+
+
+        if not formation_candle:
+
+            return False
+
+
+        if not validation_level:
+
+            return False
+
+
+        if validation_level.upper() in (
+            "N/A",
+            "NONE",
+            "UNKNOWN"
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # REQUIRED STRUCTURAL WORDS
+        # ----------------------------------------------------
+
+        required_words = [
+            "RESISTANCE",
+            "SUPPORT",
+            "BREAK"
+        ]
+
+        for word in required_words:
+
+            if word not in sequence:
+
+                return False
+
+
+        # ----------------------------------------------------
+        # REQUIRED ORDER
+        # ----------------------------------------------------
+
+        resistance_pos = sequence.find(
+            "RESISTANCE"
+        )
+
+        support_pos = sequence.find(
+            "SUPPORT"
+        )
+
+        break_pos = sequence.find(
+            "BREAK"
+        )
+
+
+        if resistance_pos == -1:
+
+            return False
+
+        if support_pos == -1:
+
+            return False
+
+        if break_pos == -1:
+
+            return False
+
+
+        if not (
+            resistance_pos
+            <
+            support_pos
+            <
+            break_pos
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # NEW SUPPORT MUST BE AFTER RESISTANCE
+        # ----------------------------------------------------
+
+        if (
+            "AFTER RESISTANCE"
+            not in sequence
+        ):
+
+            return False
+
+
+        # ----------------------------------------------------
+        # SECOND DOWN MOVE MUST EXIST
+        # ----------------------------------------------------
+
+        if "DOWN AGAIN" not in sequence:
+
+            return False
+
+
+        # ----------------------------------------------------
+        # SAME SUPPORT MUST BE BROKEN
+        # ----------------------------------------------------
+
+        if (
+            "SAME SUPPORT"
+            not in sequence
+        ):
+
+            return False
+
+
+        return True
+
 
     return False
 
@@ -2211,7 +2668,7 @@ def strong_signal_engine(data):
         ):
 
             rejection_reasons.append(
-                "هیچ VS/VR ـێکی HTF بە شێوەیەکی ڕوون پشتڕاست نەکراوەتەوە."
+                "هیچ VS/VR ـێکی HTF بە شێوەیەکی ڕوون و بە sequence ـی تەواو پشتڕاست نەکراوەتەوە."
             )
 
 
@@ -2489,6 +2946,33 @@ RESISTANCE
 → DOWN AGAIN
 → BREAK NEW SUPPORT
 → VR
+
+CRITICAL:
+
+For VS, the Resistance MUST be created AFTER
+the original Support.
+
+For VR, the Support MUST be created AFTER
+the original Resistance.
+
+Old Resistance before Support is irrelevant to VS.
+
+Old Support before Resistance is irrelevant to VR.
+
+If the complete sequence is not visible:
+
+valid = false.
+
+Do NOT guess.
+
+For every valid VS/VR provide:
+
+- original_level
+- formation_candle
+- validation_level
+- sequence
+- break_confirmed
+- valid
 
 ZONE:
 
@@ -3411,6 +3895,5 @@ def run():
 # START
 # ============================================================
 
-if __name__ == "__main__":
-
-    run()
+if _name_ == "_main_":
+ run()
