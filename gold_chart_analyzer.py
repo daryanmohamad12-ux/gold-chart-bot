@@ -1,4 +1,4 @@
-Gold Chart Analyzer PRO — V4
+Gold Chart Analyzer PRO V4
 =============================
 
 XAUUSD SNRZ Visual Analyzer
