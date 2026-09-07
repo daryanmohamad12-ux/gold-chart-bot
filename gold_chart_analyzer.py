@@ -127,7 +127,6 @@ def format_signal(data):
 """
 
     return text.strip()
-12:30 AM
 # ============================================================
 # gold_chart_analyzer.py
 # SNRZ GOLD CHART ANALYZER PRO
