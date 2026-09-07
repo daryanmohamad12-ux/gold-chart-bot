@@ -43,7 +43,6 @@ MIN_RR = 2.0
 # Gemini reliability
 GEMINI_MAX_RETRIES = 4
 GEMINI_RETRY_BASE_DELAY = 3
-```
 
 
 ALLOWED_USERS_FILE = "allowed_users.json"
