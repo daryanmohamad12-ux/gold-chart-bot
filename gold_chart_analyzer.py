@@ -1,5 +1,3 @@
-````python
-"""
 Gold Chart Analyzer PRO — V4
 =============================
 
