@@ -970,8 +970,7 @@ def verify_vs_v4(structure):
 
 def verify_vr_v4(structure):
     """
-    V4 VR validator.
-    """
+    V4 VR validator 
 
     s = normalize_structure(structure)
 
@@ -2453,4 +2452,3 @@ def run_bot():
 
 if __name__ == "__main__":
     run_bot()
-````
