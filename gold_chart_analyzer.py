@@ -41,8 +41,12 @@ MIN_STRONG_SCORE = 80.0
 MIN_STRONG_CONFIDENCE = 80.0
 MIN_RR = 2.0
 
-POLL_TIMEOUT = 30
-TELEGRAM_MESSAGE_LIMIT = 4000
+```python
+# Gemini reliability
+GEMINI_MAX_RETRIES = 4
+GEMINI_RETRY_BASE_DELAY = 3
+```
+
 
 ALLOWED_USERS_FILE = "allowed_users.json"
 IMAGE_DIR = "chart_images"
@@ -1778,28 +1782,25 @@ def strong_signal_engine(
 # GEMINI IMAGE ANALYSIS
 # ============================================================
 
+```python
 def analyze_two_charts(
     zone_path: str,
     confirmation_path: str,
 ) -> Dict[str, Any]:
     if gemini is None:
         return {
-            "error": (
-                "Gemini client is not initialized."
-            )
+            "error": "Gemini client is not initialized."
         }
 
+    # --------------------------------------------------------
+    # READ IMAGES
+    # --------------------------------------------------------
+
     try:
-        with open(
-            zone_path,
-            "rb",
-        ) as file:
+        with open(zone_path, "rb") as file:
             zone_bytes = file.read()
 
-        with open(
-            confirmation_path,
-            "rb",
-        ) as file:
+        with open(confirmation_path, "rb") as file:
             confirmation_bytes = file.read()
 
     except OSError as exc:
@@ -1809,162 +1810,169 @@ def analyze_two_charts(
         )
 
         return {
-            "error": (
-                "Could not read chart images."
-            )
+            "error": "Could not read chart images."
         }
 
-    try:
-        contents = [
-            types.Content(
-                role="user",
-                parts=[
-                    types.Part.from_text(
-                        text=USER_ANALYSIS_PROMPT,
-                    ),
-                    types.Part.from_bytes(
-                        data=zone_bytes,
-                        mime_type="image/jpeg",
-                    ),
-                    types.Part.from_bytes(
-                        data=confirmation_bytes,
-                        mime_type="image/jpeg",
-                    ),
-                ],
-            ),
-        ]
+    # --------------------------------------------------------
+    # GEMINI CONTENT
+    # --------------------------------------------------------
 
-        response = gemini.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.1,
-            ),
-        )
-
-        text = getattr(
-            response,
-            "text",
-            "",
-        )
-
-        if not text:
-            return {
-                "error": (
-                    "Gemini returned an empty response."
-                )
-            }
-
-        data = parse_json_response(text)
-
-        if not data:
-            return {
-                "error": (
-                    "Gemini returned invalid JSON."
-                )
-            }
-
-        return strong_signal_engine(data)
-
-    except Exception as exc:
-        logger.exception(
-            "Gemini analysis error",
-        )
-
-        return {
-            "error": str(exc),
-        }
-
-
-# ============================================================
-# FORMAT STRUCTURE
-# ============================================================
-
-def format_structure(
-    data: Dict[str, Any],
-) -> str:
-    structures = data.get(
-        "structures",
-        {},
-    )
-
-    if not isinstance(structures, dict):
-        structures = {}
-
-    vs = normalize_structure(
-        structures.get("vs", {})
-    )
-
-    vr = normalize_structure(
-        structures.get("vr", {})
-    )
-
-    engine = data.get(
-        "engine",
-        {},
-    )
-
-    if not isinstance(engine, dict):
-        engine = {}
-
-    vs_valid = safe_bool(
-        engine.get("vs_valid")
-    )
-
-    vr_valid = safe_bool(
-        engine.get("vr_valid")
-    )
-
-    lines = [
-        "🧱 STRUCTURE",
-        "━━━━━━━━━━━━━━",
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(
+                    text=USER_ANALYSIS_PROMPT,
+                ),
+                types.Part.from_bytes(
+                    data=zone_bytes,
+                    mime_type="image/jpeg",
+                ),
+                types.Part.from_bytes(
+                    data=confirmation_bytes,
+                    mime_type="image/jpeg",
+                ),
+            ],
+        ),
     ]
 
-    if vs_valid:
-        lines.extend([
-            "🟢 VS: VALID",
-            (
-                "Support: "
-                f"{format_price(vs['original_level'])}"
-            ),
-            (
-                "NEW Resistance: "
-                f"{format_price(vs['validation_level'])}"
-            ),
-            (
-                "Break: "
-                f"{format_price(vs['break_price'])}"
-            ),
-        ])
-    else:
-        lines.append(
-            "⚪ VS: NOT VALID"
+    # --------------------------------------------------------
+    # RETRY LOOP
+    # --------------------------------------------------------
+
+    last_error = ""
+
+    for attempt in range(
+        1,
+        GEMINI_MAX_RETRIES + 1,
+    ):
+        try:
+            logger.info(
+                "Gemini analysis attempt %s/%s using model=%s",
+                attempt,
+                GEMINI_MAX_RETRIES,
+                GEMINI_MODEL,
+            )
+
+            response = gemini.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    temperature=0.1,
+                ),
+            )
+
+            text = getattr(
+                response,
+                "text",
+                "",
+            )
+
+            if not text:
+                last_error = (
+                    "Gemini returned an empty response."
+                )
+
+                logger.warning(
+                    "%s",
+                    last_error,
+                )
+
+            else:
+                data = parse_json_response(text)
+
+                if data:
+                    logger.info(
+                        "Gemini analysis successful on attempt %s.",
+                        attempt,
+                    )
+
+                    return strong_signal_engine(data)
+
+                last_error = (
+                    "Gemini returned invalid JSON."
+                )
+
+                logger.warning(
+                    "%s",
+                    last_error,
+                )
+
+        except Exception as exc:
+            last_error = str(exc)
+
+            error_text = str(exc).lower()
+
+            # ------------------------------------------------
+            # TEMPORARY GEMINI ERRORS
+            # ------------------------------------------------
+
+            is_temporary = any(
+                keyword in error_text
+                for keyword in (
+                    "503",
+                    "unavailable",
+                    "high demand",
+                    "overloaded",
+                    "temporarily",
+                    "deadline exceeded",
+                    "429",
+                    "resource exhausted",
+                    "rate limit",
+                )
+            )
+
+            if not is_temporary:
+                logger.exception(
+                    "Gemini permanent analysis error."
+                )
+
+                return {
+                    "error": str(exc)
+                }
+
+            logger.warning(
+                "Gemini temporary error on attempt %s/%s: %s",
+                attempt,
+                GEMINI_MAX_RETRIES,
+                exc,
+            )
+
+        # ----------------------------------------------------
+        # WAIT BEFORE RETRY
+        # ----------------------------------------------------
+
+        if attempt < GEMINI_MAX_RETRIES:
+            delay = (
+                GEMINI_RETRY_BASE_DELAY
+                * (2 ** (attempt - 1))
+            )
+
+            logger.info(
+                "Waiting %s seconds before Gemini retry...",
+                delay,
+            )
+
+            time.sleep(delay)
+
+    # --------------------------------------------------------
+    # ALL RETRIES FAILED
+    # --------------------------------------------------------
+
+    logger.error(
+        "Gemini failed after %s attempts. Last error: %s",
+        GEMINI_MAX_RETRIES,
+        last_error,
+    )
+
+    return {
+        "error": (
+            "Gemini کاتییەکەی بارەکەی زۆرە (503). "
+            "دووبارە هەوڵ بدە."
         )
-
-    if vr_valid:
-        lines.extend([
-            "🔴 VR: VALID",
-            (
-                "Resistance: "
-                f"{format_price(vr['original_level'])}"
-            ),
-            (
-                "NEW Support: "
-                f"{format_price(vr['validation_level'])}"
-            ),
-            (
-                "Break: "
-                f"{format_price(vr['break_price'])}"
-            ),
-        ])
-    else:
-        lines.append(
-            "⚪ VR: NOT VALID"
-        )
-
-    return "\n".join(lines)
-
+    }
+```
 
 # ============================================================
 # FORMAT SIGNAL
