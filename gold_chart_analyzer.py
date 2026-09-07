@@ -2,7 +2,8 @@
 # gold_chart_analyzer.py
 # SNRZ GOLD CHART ANALYZER PRO
 # ADMIN + ACCESS REQUEST SYSTEM + ALLOWED USERS
-# VS / VR STRUCTURE ENGINE + STRONG SIGNAL ENGINE
+# VS / VR VERIFICATION ENGINE V2
+# STRONG SIGNAL ENGINE
 # ============================================================
 
 import os
@@ -59,7 +60,6 @@ def load_allowed_users():
         if not os.path.exists(
             ACCESS_FILE
         ):
-
             return default_users
 
         with open(
@@ -75,7 +75,6 @@ def load_allowed_users():
         for user_id in data:
 
             try:
-
                 users.add(
                     int(user_id)
                 )
@@ -84,7 +83,6 @@ def load_allowed_users():
                 ValueError,
                 TypeError
             ):
-
                 pass
 
         users.add(
@@ -138,7 +136,6 @@ ALLOWED_USER_IDS = load_allowed_users()
 # ============================================================
 
 PENDING_ACCESS_REQUESTS = {}
-
 ACCESS_CODES = {}
 
 
@@ -193,7 +190,7 @@ gemini = genai.Client(
 
 
 # ============================================================
-# TELEGRAM
+# TELEGRAM API
 # ============================================================
 
 class TelegramAPIError(Exception):
@@ -202,7 +199,10 @@ class TelegramAPIError(Exception):
 
 class TelegramBot:
 
-    def __init__(self, token):
+    def __init__(
+        self,
+        token
+    ):
 
         self.token = token
 
@@ -218,21 +218,25 @@ class TelegramBot:
         timeout=60
     ):
 
-        url = f"{self.base_url}/{method}"
+        url = (
+            f"{self.base_url}/{method}"
+        )
 
         try:
 
             response = requests.post(
                 url,
                 json=data or {},
-                timeout=timeout,
+                timeout=timeout
             )
 
             response.raise_for_status()
 
             result = response.json()
 
-            if not result.get("ok"):
+            if not result.get(
+                "ok"
+            ):
 
                 raise TelegramAPIError(
                     result.get(
@@ -278,7 +282,7 @@ class TelegramBot:
             "allowed_updates": [
                 "message",
                 "callback_query"
-            ],
+            ]
         }
 
         if offset is not None:
@@ -298,7 +302,7 @@ class TelegramBot:
         text
     ):
 
-        MAX_LENGTH = 4000
+        max_length = 4000
 
         if not isinstance(
             text,
@@ -307,13 +311,13 @@ class TelegramBot:
 
             text = str(text)
 
-        if len(text) <= MAX_LENGTH:
+        if len(text) <= max_length:
 
             return self.call(
                 "sendMessage",
                 {
                     "chat_id": chat_id,
-                    "text": text,
+                    "text": text
                 }
             )
 
@@ -322,11 +326,11 @@ class TelegramBot:
         for i in range(
             0,
             len(text),
-            MAX_LENGTH
+            max_length
         ):
 
             chunk = text[
-                i:i + MAX_LENGTH
+                i:i + max_length
             ]
 
             results.append(
@@ -334,7 +338,7 @@ class TelegramBot:
                     "sendMessage",
                     {
                         "chat_id": chat_id,
-                        "text": chunk,
+                        "text": chunk
                     }
                 )
             )
@@ -372,7 +376,7 @@ class TelegramBot:
 
         data = {
             "chat_id": chat_id,
-            "message_id": message_id,
+            "message_id": message_id
         }
 
         if reply_markup is not None:
@@ -436,19 +440,25 @@ USER_SESSIONS = {}
 # ACCESS CONTROL
 # ============================================================
 
-def is_admin(user_id):
+def is_admin(
+    user_id
+):
 
     return user_id == ADMIN_USER_ID
 
 
-def is_allowed(user_id):
+def is_allowed(
+    user_id
+):
 
     return (
         user_id in ALLOWED_USER_IDS
     )
 
 
-def deny_access(chat_id):
+def deny_access(
+    chat_id
+):
 
     telegram.send_message(
 
@@ -583,7 +593,7 @@ def send_access_request(
             last_name,
 
         "username":
-            username,
+            username
     }
 
 
@@ -682,7 +692,6 @@ def send_access_request(
         "sendMessage",
 
         {
-
             "chat_id":
                 ADMIN_USER_ID,
 
@@ -690,8 +699,7 @@ def send_access_request(
                 admin_text,
 
             "reply_markup":
-                keyboard,
-
+                keyboard
         }
     )
 
@@ -800,7 +808,6 @@ def handle_access_callback(
 
         save_allowed_users()
 
-
         PENDING_ACCESS_REQUESTS.pop(
             user_id,
             None
@@ -811,14 +818,12 @@ def handle_access_callback(
             None
         )
 
-
         telegram.answer_callback_query(
 
             callback_id,
 
             "✅ User approved."
         )
-
 
         telegram.send_message(
 
@@ -831,7 +836,7 @@ def handle_access_callback(
 
 🥇 Gold Chart Analyzer PRO
 
-🧠 SNRZ Structure Engine چالاکە.
+🧠 SNRZ Structure Engine V2 چالاکە.
 
 ئێستا دەتوانیت بۆتەکە بەکاربهێنیت.
 
@@ -854,14 +859,12 @@ def handle_access_callback(
             None
         )
 
-
         telegram.answer_callback_query(
 
             callback_id,
 
             "❌ User rejected."
         )
-
 
         telegram.send_message(
 
@@ -1178,7 +1181,7 @@ def handle_admin_command(
 
 /users
 
-⏳ داواکارییە چاوەڕوانەکان:
+⏳ داواکارییە چاوەوانەکان:
 
 /pending
 
@@ -1272,7 +1275,7 @@ Approve / Reject بکات.
 
 
 # ============================================================
-# SNRZ SYSTEM PROMPT
+# SNRZ SYSTEM PROMPT — V2
 # ============================================================
 
 SYSTEM_PROMPT = r"""
@@ -1280,30 +1283,19 @@ You are an ELITE XAUUSD SNRZ STRUCTURE ANALYST.
 
 Your job is NOT to search for frequent signals.
 
-Your job is to find only COMPLETE and VISUALLY PROVEN
-SNRZ structures.
+Your job is to identify COMPLETE, VISUALLY PROVEN
+VS and VR structures from the H1/H4 chart.
+
+You must verify the structure before allowing any Zone.
 
 ============================================================
-LANGUAGE — CRITICAL
+LANGUAGE
 ============================================================
 
-ALL explanatory text inside the JSON MUST be written
-in Sorani Kurdish.
+ALL explanatory text inside JSON must be written in
+Sorani Kurdish.
 
-This includes:
-
-setup
-trend
-htf_zones
-formation_candle
-sequence
-confirmation
-reasoning
-checks
-rejection_reason
-wait_for
-
-Technical SNRZ names MUST remain EXACTLY in English:
+Technical SNRZ names must remain EXACTLY in English:
 
 VS
 VR
@@ -1329,201 +1321,255 @@ M5
 HTF
 LTF
 
-Do NOT write explanatory English inside these fields.
-
-For example, NEVER output:
-
-"sequence": "RESISTANCE → DOWN → NEW SUPPORT AFTER RESISTANCE → DOWN AGAIN → BREAK SAME SUPPORT"
-
-Instead output Sorani Kurdish explanation while keeping
-technical terms in English.
-
-Example:
-
-"sequence": "Resistance → دابەزین → Support ـێکی نوێ دوای Resistance → دابەزینەوە → شکاندنی هەمان Support"
-
-Another example:
-
-"formation_candle": "کەندڵی Support لە ناوچەی ئەم نرخەدا دروست بوو."
-
 ============================================================
-TIMEFRAME STRUCTURE
+IMPORTANT — VISUAL VERIFICATION V2
 ============================================================
 
-IMAGE 1:
+Do NOT determine VS/VR from nearby Support/Resistance
+levels alone.
 
-H1 or H4.
+Do NOT simply compare the highest and lowest visible
+prices.
 
-This is HTF.
+You MUST visually trace the candle sequence from LEFT
+TO RIGHT across the visible H1/H4 chart.
 
-Its job is to identify:
+You must use only information that is visibly present
+on the chart.
 
-VS
-VR
-Support
-Resistance
-Break
-Retest
-Major direction
-HTF Zones
+Never invent hidden candles.
 
-IMAGE 2:
+Never assume a missing move.
 
-M1 or M5.
-
-This is LTF.
-
-Its job is confirmation only.
+Never assume a breakout that cannot be seen.
 
 ============================================================
 VS — VALID SUPPORT
 ============================================================
 
-A normal Support is NOT automatically VS.
+A normal Support is NOT VS.
 
-For VS, ONLY the Resistance CREATED AFTER the original
-Support is relevant.
+For VS, follow this exact chronological structure:
 
-Any Resistance that existed BEFORE the Support is
-COMPLETELY IRRELEVANT.
+STEP 1:
+Find an ORIGINAL Support.
 
-Required structure:
+STEP 2:
+Confirm price moves UP from that Support.
 
-Support
-→ Up
-→ NEW Resistance AFTER Support
-→ Up AGAIN
-→ Break THAT SAME Resistance
+STEP 3:
+After that Support, identify a NEW Resistance.
 
-Only after the complete structure is visually proven:
+IMPORTANT:
+The Resistance MUST be created AFTER the original Support.
 
-original Support = VS.
+Any Resistance that existed BEFORE the Support is irrelevant.
 
-If the NEW Resistance after Support has NOT been broken:
+STEP 4:
+After the NEW Resistance is formed, price must move UP AGAIN.
 
-VS = invalid.
+STEP 5:
+Price must then BREAK ABOVE THAT SAME NEW Resistance.
 
-If any part of the structure is missing:
+The break must be visually clear.
 
-VS = invalid.
+Only after all five steps are visible:
 
-Do NOT guess missing candles.
+VS = valid.
 
-Do NOT infer hidden structure.
+The original Support becomes VS.
 
-Do NOT use old Resistance before Support.
+============================================================
+VS BREAK RULE
+============================================================
+
+A break means price clearly moves beyond the SAME
+new Resistance created after the Support.
+
+The following are NOT sufficient:
+
+- touching Resistance
+- wick touching Resistance
+- rejection from Resistance
+- approaching Resistance
+- equal high
+- approximate high
+- unclear candle
+- assumed breakout
+- current price being above the level without clear
+  historical evidence
+
+If the chart clearly shows a candle breaking above the
+same Resistance, then break_confirmed = true.
+
+If the break is not visually clear:
+
+break_confirmed = false
+valid = false
 
 ============================================================
 VR — VALID RESISTANCE
 ============================================================
 
-A normal Resistance is NOT automatically VR.
+A normal Resistance is NOT VR.
 
-For VR, ONLY the Support CREATED AFTER the original
-Resistance is relevant.
+For VR, follow this exact chronological structure:
 
-Any Support that existed BEFORE the Resistance is
-COMPLETELY IRRELEVANT.
+STEP 1:
+Find an ORIGINAL Resistance.
 
-Required structure:
+STEP 2:
+Confirm price moves DOWN from that Resistance.
+
+STEP 3:
+After that Resistance, identify a NEW Support.
+
+IMPORTANT:
+The Support MUST be created AFTER the original Resistance.
+
+Any Support that existed BEFORE the Resistance is irrelevant.
+
+STEP 4:
+After the NEW Support is formed, price must move DOWN AGAIN.
+
+STEP 5:
+Price must then BREAK BELOW THAT SAME NEW Support.
+
+The break must be visually clear.
+
+Only after all five steps are visible:
+
+VR = valid.
+
+The original Resistance becomes VR.
+
+============================================================
+VR BREAK RULE
+============================================================
+
+A break means price clearly moves below the SAME
+new Support created after the Resistance.
+
+The following are NOT sufficient:
+
+- touching Support
+- wick touching Support
+- rejection from Support
+- approaching Support
+- approximate low
+- unclear candle
+- assumed breakdown
+- current price being below the level without clear
+  historical evidence
+
+If the chart clearly shows a candle breaking below the
+same Support, then break_confirmed = true.
+
+If the break is not visually clear:
+
+break_confirmed = false
+valid = false
+
+============================================================
+FULL VS/VR SCAN
+============================================================
+
+ALWAYS scan BOTH structures independently.
+
+Do this even if the final signal is WAIT.
+
+You must determine:
+
+1. VS status.
+2. VR status.
+3. Original level.
+4. Formation candle.
+5. New opposite level.
+6. Second directional move.
+7. Break of the SAME new opposite level.
+8. Break confirmation.
+9. Final validity.
+
+Never stop after finding only one candidate.
+
+============================================================
+CRITICAL CHRONOLOGY
+============================================================
+
+For VS:
+
+Support
+→ Up
+→ NEW Resistance AFTER Support
+→ Up AGAIN
+→ BREAK SAME Resistance
+→ VS
+
+For VR:
 
 Resistance
 → Down
 → NEW Support AFTER Resistance
 → Down AGAIN
-→ Break THAT SAME Support
+→ BREAK SAME Support
+→ VR
 
-Only after the complete structure is visually proven:
+The word "AFTER" is chronological.
 
-original Resistance = VR.
-
-If the NEW Support after Resistance has NOT been broken:
-
-VR = invalid.
-
-If any part of the structure is missing:
-
-VR = invalid.
-
-Do NOT guess missing candles.
-
-Do NOT infer hidden structure.
-
-Do NOT use old Support before Resistance.
+Do NOT reverse the order.
 
 ============================================================
-VS / VR FULL VERIFICATION
+ZONE RULE
 ============================================================
 
-Before BUY or SELL analysis:
+Zone exists ONLY if VS or VR is valid.
 
-FIRST scan the complete H1/H4 chart.
+Never create a Zone from:
 
-For every candidate, explicitly identify:
+- normal Support
+- normal Resistance
+- possible VS
+- possible VR
+- unconfirmed structure
+- random candle
+- engulfing pattern
 
-1. Original Support/Resistance.
-2. Formation candle.
-3. New opposite level created AFTER it.
-4. Second move in same direction.
-5. Break of THAT SAME new opposite level.
-6. Complete sequence.
-7. Break confirmation.
-8. Validity.
+After a VALID VS/VR:
 
-If any part is unclear:
-
-valid = false.
-
-============================================================
-ZONE DETERMINATION — CRITICAL
-============================================================
-
-Zone comes ONLY from a confirmed VS or VR.
-
-After valid VS/VR:
-
-1. Identify the candle where VS/VR is formed.
-2. Look at the immediately previous candle.
+1. Identify the exact candle where the VS/VR is formed.
+2. Identify the immediately previous candle.
 3. Compare BODY SIZE.
-4. Choose the candle with the SHORTER BODY.
-5. Entire selected candle HIGH-to-LOW = Zone.
+4. Select the candle with the SHORTER BODY.
+5. Zone = complete HIGH-to-LOW range of that selected candle.
 
-IMPORTANT:
+The Zone is the complete candle range.
 
-Zone is NOT only the candle body.
+Do NOT use only the candle body.
 
-Zone = complete HIGH-to-LOW range.
+Do NOT use Bullish Engulfing.
 
-Do NOT use Bullish Engulf.
-
-Do NOT use Bearish Engulf.
-
-Do NOT use another Zone method.
+Do NOT use Bearish Engulfing.
 
 ============================================================
-PULLBACK → CONFIRMATION
+PULLBACK / RETEST
 ============================================================
 
 The required flow is:
 
 VALID VS/VR
-→ ZONE
-→ PRICE PULLBACK / RETEST TO ZONE
-→ M1/M5 CONFIRMATION
-→ STRONG SIGNAL CHECK
-→ ENTRY
+→ Zone
+→ Price Pullback / Retest
+→ M1/M5 Confirmation
+→ Strong Signal Check
+→ Entry
 
-If price has NOT returned to Zone:
-
-WAIT.
-
-Never accept confirmation before Pullback/Retest.
+Confirmation before Pullback is INVALID.
 
 ============================================================
 BUY CONFIRMATION
 ============================================================
 
-BUY confirmation can ONLY be:
+Allowed BUY confirmation:
 
 RBS
 SRR
@@ -1534,7 +1580,7 @@ PO2
 SELL CONFIRMATION
 ============================================================
 
-SELL confirmation can ONLY be:
+Allowed SELL confirmation:
 
 SBR
 RSS
@@ -1545,110 +1591,78 @@ PO2
 STRONG SIGNAL
 ============================================================
 
-BUY or SELL ONLY when ALL conditions pass:
+BUY or SELL ONLY when ALL are true:
 
-1. Clear VS/VR.
-2. Valid Zone.
-3. Price is at or retesting Zone.
-4. Valid confirmation.
-5. Confirmation formed AFTER Pullback.
-6. HTF/LTF agreement.
-7. Logical Entry.
-8. Logical SL.
-9. Logical TP.
-10. RR >= 1:2.
-11. Score >= 80.
-12. Confidence >= 80%.
-13. No rejection filter.
+- Valid VS or VR.
+- Valid Zone.
+- Price has reached/retested Zone.
+- Confirmation formed AFTER Pullback.
+- Confirmation is valid.
+- HTF/LTF agree.
+- Entry is logical.
+- SL is logical.
+- TP is logical.
+- RR >= 1:2.
+- Score >= 80.
+- Confidence >= 80%.
+- No rejection filter.
 
 If ANY condition is missing:
 
 WAIT.
 
 ============================================================
-REJECTION FILTERS
+WAIT
 ============================================================
 
-WAIT if:
+If VS/VR is incomplete:
 
-- VS/VR is unclear.
-- VS/VR structure incomplete.
-- Normal Support/Resistance only.
-- Zone is unclear.
-- Price is far from Zone.
-- Price is in middle of range.
-- Pullback missing.
-- Retest missing.
-- Confirmation missing.
-- Confirmation incomplete.
-- HTF/LTF conflict.
-- Entry unclear.
-- SL unclear.
-- TP unclear.
-- RR < 1:2.
-- Score < 80.
-- Confidence < 80.
-- Fake breakout suspected.
-- Chart quality insufficient.
-- Guessing is required.
+WAIT.
 
-============================================================
-WAIT NEXT ACTION
-============================================================
+If valid VS/VR exists but price has not returned to Zone:
 
-When signal = WAIT, explain EXACTLY what is missing.
+WAIT.
 
-If valid VS exists but price has not reached Zone:
+If price is at Zone but confirmation is missing:
 
-"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone ـی [ZONE PRICE]."
+WAIT.
 
-If price reached VS Zone but BUY confirmation missing:
+If confirmation is before Pullback:
 
-"VS بەردەستە، بەڵام چاوەڕێی RBS یان SRR یان I.VR بکە."
+WAIT.
 
-If valid VR exists but price has not reached Zone:
+If RR < 1:2:
 
-"چاوەڕێ بکە نرخ بگاتە Zone ـی [ZONE PRICE]."
+WAIT.
 
-If price reached VR Zone but SELL confirmation missing:
+If Score < 80:
 
-"VR بەردەستە، بەڵام چاوەڕێی SBR یان RSS یان I.VS بکە."
+WAIT.
 
-If breakout happened but retest is missing:
+If Confidence < 80:
 
-"چاوەڕێی retest بکە."
-
-If RR is insufficient:
-
-"چاوەڕێی entry ـێکی باشتر یان target ـێکی ڕوونتر بکە."
+WAIT.
 
 ============================================================
 ZONE PRICE
 ============================================================
 
-If a valid Zone exists:
+If there is NO valid VS or VR:
 
-ALWAYS provide exact Zone Price.
+zone = "N/A"
+zone_price = "N/A"
 
-Example:
+If there IS a valid VS or VR:
 
-"zone_price": "2380.00 - 2382.00"
+provide exact Zone Price from the chart.
 
-If WAIT and Zone exists:
-
-wait_for MUST include the exact Zone Price.
-
-Never invent prices.
+Never invent a price.
 
 ============================================================
-OUTPUT FORMAT
+JSON
 ============================================================
 
 Return ONLY valid JSON.
-
-No markdown.
-
-No code fences.
 
 Use EXACTLY these keys:
 
@@ -1692,94 +1706,50 @@ Use EXACTLY these keys:
   },
 
   "confirmation": "...",
-
   "trend": "...",
-
   "reasoning": "...",
-
   "checks": "...",
-
   "rejection_reason": "...",
-
   "wait_for": "..."
 }
 
 ============================================================
-VS JSON
+IMPORTANT OUTPUT RULE
 ============================================================
 
-Valid VS example:
+If VS is valid:
 
-"vs_detected": {
-  "valid": true,
-  "original_level": "4418.00",
-  "formation_candle": "کەندڵی Support لە نزیک 4418.00 دروست بوو.",
-  "validation_level": "4428.00",
-  "sequence": "Support → بەرزبوونەوە → Resistance ـێکی نوێ دوای Support → بەرزبوونەوەی دووبارە → شکاندنی هەمان Resistance",
-  "break_confirmed": true
-}
+vs_detected.valid = true
+vs_detected.break_confirmed = true
 
-Invalid VS example:
+If VR is valid:
 
-"vs_detected": {
-  "valid": false,
-  "original_level": "...",
-  "formation_candle": "...",
-  "validation_level": "N/A",
-  "sequence": "پێکهاتەی VS تەواو نییە.",
-  "break_confirmed": false
-}
+vr_detected.valid = true
+vr_detected.break_confirmed = true
 
-============================================================
-VR JSON
-============================================================
+If either break is not visually proven:
 
-Valid VR example:
+valid = false
+break_confirmed = false
 
-"vr_detected": {
-  "valid": true,
-  "original_level": "4418.00",
-  "formation_candle": "کەندڵی Resistance لە نزیک 4418.00 دروست بوو.",
-  "validation_level": "4391.00",
-  "sequence": "Resistance → دابەزین → Support ـێکی نوێ دوای Resistance → دابەزینەوە → شکاندنی هەمان Support",
-  "break_confirmed": true
-}
-
-Invalid VR example:
-
-"vr_detected": {
-  "valid": false,
-  "original_level": "...",
-  "formation_candle": "...",
-  "validation_level": "N/A",
-  "sequence": "پێکهاتەی VR تەواو نییە.",
-  "break_confirmed": false
-}
+Do NOT mark a structure valid only because the levels
+look approximately correct.
 
 ============================================================
 FINAL PRINCIPLE
 ============================================================
 
-Do not search for signals.
+STRUCTURE FIRST.
 
-Search for STRUCTURE.
+VS/VR VERIFICATION V2
+→ VALID VS/VR
+→ Zone
+→ Pullback / Retest
+→ LTF Confirmation
+→ Strong Signal Filters
+→ BUY / SELL
 
-VALID VS/VR
-→ ZONE
-→ PULLBACK / RETEST
-→ CONFIRMATION
-→ STRONG SIGNAL CHECK
-→ BUY / SELL.
-
-If price has not returned to Zone:
-
-WAIT.
-
-If confirmation has not formed:
-
-WAIT.
-
-If structure does not exist:
+Otherwise:
 
 WAIT.
 """
@@ -1789,7 +1759,9 @@ WAIT.
 # JSON CLEANER
 # ============================================================
 
-def clean_json(text):
+def clean_json(
+    text
+):
 
     if not text:
 
@@ -1809,8 +1781,13 @@ def clean_json(text):
         ""
     )
 
-    start = text.find("{")
-    end = text.rfind("}")
+    start = text.find(
+        "{"
+    )
+
+    end = text.rfind(
+        "}"
+    )
 
     if start == -1 or end == -1:
 
@@ -1827,11 +1804,14 @@ def clean_json(text):
 # SAFE FLOAT
 # ============================================================
 
-def safe_float(value):
+def safe_float(
+    value
+):
 
     try:
 
         if value is None:
+
             return None
 
         if isinstance(
@@ -1839,9 +1819,13 @@ def safe_float(value):
             (int, float)
         ):
 
-            return float(value)
+            return float(
+                value
+            )
 
-        value = str(value)
+        value = str(
+            value
+        )
 
         value = value.replace(
             ",",
@@ -1867,10 +1851,12 @@ def safe_float(value):
 
 
 # ============================================================
-# CALCULATE RR
+# RR CALCULATOR
 # ============================================================
 
-def calculate_rr(data):
+def calculate_rr(
+    data
+):
 
     signal = str(
         data.get(
@@ -1880,15 +1866,21 @@ def calculate_rr(data):
     ).upper()
 
     entry = safe_float(
-        data.get("entry")
+        data.get(
+            "entry"
+        )
     )
 
     sl = safe_float(
-        data.get("sl")
+        data.get(
+            "sl"
+        )
     )
 
     tp1 = safe_float(
-        data.get("tp1")
+        data.get(
+            "tp1"
+        )
     )
 
     if None in (
@@ -1899,31 +1891,49 @@ def calculate_rr(data):
 
         return None
 
+
     if signal == "BUY":
 
-        risk = entry - sl
-        reward = tp1 - entry
+        risk = (
+            entry - sl
+        )
+
+        reward = (
+            tp1 - entry
+        )
 
     elif signal == "SELL":
 
-        risk = sl - entry
-        reward = entry - tp1
+        risk = (
+            sl - entry
+        )
+
+        reward = (
+            entry - tp1
+        )
 
     else:
 
         return None
 
+
     if risk <= 0:
+
         return None
+
 
     if reward <= 0:
+
         return None
 
-    return reward / risk
+
+    return (
+        reward / risk
+    )
 
 
 # ============================================================
-# DETECT CONFIRMATION
+# CONFIRMATION VALIDATION
 # ============================================================
 
 def confirmation_is_valid(
@@ -1939,376 +1949,640 @@ def confirmation_is_valid(
         confirmation
     ).upper()
 
+
     if signal == "BUY":
 
         return (
             "RBS" in confirmation
-            or "SRR" in confirmation
-            or "I.VR" in confirmation
-            or "PO2" in confirmation
+            or
+            "SRR" in confirmation
+            or
+            "I.VR" in confirmation
+            or
+            "PO2" in confirmation
         )
+
 
     if signal == "SELL":
 
         return (
             "SBR" in confirmation
-            or "RSS" in confirmation
-            or "I.VS" in confirmation
-            or "PO2" in confirmation
+            or
+            "RSS" in confirmation
+            or
+            "I.VS" in confirmation
+            or
+            "PO2" in confirmation
         )
+
 
     return False
 
 
 # ============================================================
-# STRICT VS / VR VALIDATION
+# TEXT HELPERS
 # ============================================================
 
-def validate_vs_vr(
-    data,
-    signal
+def contains_any(
+    text,
+    phrases
 ):
 
-    if signal not in (
-        "BUY",
-        "SELL"
+    text = str(
+        text or ""
+    ).upper()
+
+    for phrase in phrases:
+
+        if phrase.upper() in text:
+
+            return True
+
+    return False
+
+
+def contains_all(
+    text,
+    phrases
+):
+
+    text = str(
+        text or ""
+    ).upper()
+
+    for phrase in phrases:
+
+        if phrase.upper() not in text:
+
+            return False
+
+    return True
+
+
+def first_position(
+    text,
+    phrases
+):
+
+    text = str(
+        text or ""
+    ).upper()
+
+    positions = []
+
+    for phrase in phrases:
+
+        position = text.find(
+            phrase.upper()
+        )
+
+        if position != -1:
+
+            positions.append(
+                position
+            )
+
+    if not positions:
+
+        return -1
+
+    return min(
+        positions
+    )
+
+
+# ============================================================
+# VERIFY VS — ENGINE V2
+# ============================================================
+
+def verify_vs_v2(
+    vs_data
+):
+
+    if not isinstance(
+        vs_data,
+        dict
     ):
 
         return False
 
 
-    # ========================================================
-    # BUY → VS
-    # ========================================================
+    if vs_data.get(
+        "valid",
+        False
+    ) is not True:
 
-    if signal == "BUY":
+        return False
 
-        vs_data = data.get(
-            "vs_detected"
+
+    if vs_data.get(
+        "break_confirmed",
+        False
+    ) is not True:
+
+        return False
+
+
+    original_level = str(
+        vs_data.get(
+            "original_level",
+            ""
         )
+    ).strip()
 
-        if not isinstance(
-            vs_data,
-            dict
-        ):
-
-            return False
-
-
-        valid = (
-            vs_data.get(
-                "valid",
-                False
-            )
-            is True
+    formation_candle = str(
+        vs_data.get(
+            "formation_candle",
+            ""
         )
+    ).strip()
 
-        break_confirmed = (
-            vs_data.get(
-                "break_confirmed",
-                False
-            )
-            is True
+    validation_level = str(
+        vs_data.get(
+            "validation_level",
+            ""
         )
+    ).strip()
+
+    sequence = str(
+        vs_data.get(
+            "sequence",
+            ""
+        )
+    ).strip()
 
 
-        original_level = str(
-            vs_data.get(
-                "original_level",
-                ""
-            )
-        ).strip()
+    if not original_level:
+
+        return False
 
 
-        formation_candle = str(
-            vs_data.get(
-                "formation_candle",
-                ""
-            )
-        ).strip()
+    if not formation_candle:
+
+        return False
 
 
-        validation_level = str(
-            vs_data.get(
-                "validation_level",
-                ""
-            )
-        ).strip()
+    if not validation_level:
+
+        return False
 
 
-        sequence = str(
-            vs_data.get(
-                "sequence",
-                ""
-            )
-        ).strip().upper()
+    if validation_level.upper() in (
+        "N/A",
+        "NONE",
+        "UNKNOWN",
+        "NULL",
+        "..."
+    ):
+
+        return False
 
 
-        if not valid:
-            return False
+    if not sequence:
 
-        if not break_confirmed:
-            return False
-
-        if not original_level:
-            return False
-
-        if not formation_candle:
-            return False
-
-        if not validation_level:
-            return False
-
-        if validation_level.upper() in (
-            "N/A",
-            "NONE",
-            "UNKNOWN"
-        ):
-
-            return False
+        return False
 
 
-        required_words = [
-            "SUPPORT",
-            "RESISTANCE",
-            "BREAK"
+    sequence_upper = sequence.upper()
+
+
+    # --------------------------------------------------------
+    # REQUIRED TECHNICAL LEVELS
+    # --------------------------------------------------------
+
+    if "SUPPORT" not in sequence_upper:
+
+        return False
+
+
+    if "RESISTANCE" not in sequence_upper:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # REQUIRED BREAK
+    # --------------------------------------------------------
+
+    break_exists = contains_any(
+        sequence_upper,
+        [
+            "BREAK",
+            "شکاند",
+            "پەڕاند",
+            "تێپەڕاند"
         ]
+    )
 
-        for word in required_words:
+    if not break_exists:
 
-            if word not in sequence:
-
-                return False
+        return False
 
 
-        support_pos = sequence.find(
+    # --------------------------------------------------------
+    # CHRONOLOGICAL ORDER
+    # --------------------------------------------------------
+
+    support_pos = first_position(
+        sequence_upper,
+        [
             "SUPPORT"
-        )
-
-        resistance_pos = sequence.find(
-            "RESISTANCE"
-        )
-
-        break_pos = sequence.find(
-            "BREAK"
-        )
-
-
-        if support_pos == -1:
-            return False
-
-        if resistance_pos == -1:
-            return False
-
-        if break_pos == -1:
-            return False
-
-
-        if not (
-            support_pos
-            <
-            resistance_pos
-            <
-            break_pos
-        ):
-
-            return False
-
-
-        if (
-            "AFTER SUPPORT"
-            not in sequence
-        ):
-
-            return False
-
-
-        if "UP AGAIN" not in sequence:
-
-            return False
-
-
-        if (
-            "SAME RESISTANCE"
-            not in sequence
-        ):
-
-            return False
-
-
-        return True
-
-
-    # ========================================================
-    # SELL → VR
-    # ========================================================
-
-    if signal == "SELL":
-
-        vr_data = data.get(
-            "vr_detected"
-        )
-
-        if not isinstance(
-            vr_data,
-            dict
-        ):
-
-            return False
-
-
-        valid = (
-            vr_data.get(
-                "valid",
-                False
-            )
-            is True
-        )
-
-        break_confirmed = (
-            vr_data.get(
-                "break_confirmed",
-                False
-            )
-            is True
-        )
-
-
-        original_level = str(
-            vr_data.get(
-                "original_level",
-                ""
-            )
-        ).strip()
-
-
-        formation_candle = str(
-            vr_data.get(
-                "formation_candle",
-                ""
-            )
-        ).strip()
-
-
-        validation_level = str(
-            vr_data.get(
-                "validation_level",
-                ""
-            )
-        ).strip()
-
-
-        sequence = str(
-            vr_data.get(
-                "sequence",
-                ""
-            )
-        ).strip().upper()
-
-
-        if not valid:
-            return False
-
-        if not break_confirmed:
-            return False
-
-        if not original_level:
-            return False
-
-        if not formation_candle:
-            return False
-
-        if not validation_level:
-            return False
-
-        if validation_level.upper() in (
-            "N/A",
-            "NONE",
-            "UNKNOWN"
-        ):
-
-            return False
-
-
-        required_words = [
-            "RESISTANCE",
-            "SUPPORT",
-            "BREAK"
         ]
+    )
 
-        for word in required_words:
-
-            if word not in sequence:
-
-                return False
-
-
-        resistance_pos = sequence.find(
+    resistance_pos = first_position(
+        sequence_upper,
+        [
             "RESISTANCE"
-        )
+        ]
+    )
 
-        support_pos = sequence.find(
+    break_pos = first_position(
+        sequence_upper,
+        [
+            "BREAK",
+            "شکاند",
+            "پەڕاند",
+            "تێپەڕاند"
+        ]
+    )
+
+
+    if (
+        support_pos == -1
+        or
+        resistance_pos == -1
+        or
+        break_pos == -1
+    ):
+
+        return False
+
+
+    if not (
+        support_pos
+        <
+        resistance_pos
+        <
+        break_pos
+    ):
+
+        return False
+
+
+    # --------------------------------------------------------
+    # RESISTANCE MUST BE AFTER SUPPORT
+    # --------------------------------------------------------
+
+    after_support = contains_any(
+        sequence_upper,
+        [
+            "AFTER SUPPORT",
+            "دوای SUPPORT",
+            "لە دوای SUPPORT"
+        ]
+    )
+
+    if not after_support:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # SECOND UP MOVE
+    # --------------------------------------------------------
+
+    second_up = (
+        contains_any(
+            sequence_upper,
+            [
+                "UP AGAIN",
+                "UP AGAIN",
+                "دووبارە"
+            ]
+        )
+        and
+        contains_any(
+            sequence_upper,
+            [
+                "UP",
+                "سەرەوە",
+                "بەرزبوونەوە"
+            ]
+        )
+    )
+
+    if not second_up:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # SAME RESISTANCE
+    # --------------------------------------------------------
+
+    same_resistance = contains_any(
+        sequence_upper,
+        [
+            "SAME RESISTANCE",
+            "هەمان RESISTANCE"
+        ]
+    )
+
+    if not same_resistance:
+
+        return False
+
+
+    return True
+
+
+# ============================================================
+# VERIFY VR — ENGINE V2
+# ============================================================
+
+def verify_vr_v2(
+    vr_data
+):
+
+    if not isinstance(
+        vr_data,
+        dict
+    ):
+
+        return False
+
+
+    if vr_data.get(
+        "valid",
+        False
+    ) is not True:
+
+        return False
+
+
+    if vr_data.get(
+        "break_confirmed",
+        False
+    ) is not True:
+
+        return False
+
+
+    original_level = str(
+        vr_data.get(
+            "original_level",
+            ""
+        )
+    ).strip()
+
+    formation_candle = str(
+        vr_data.get(
+            "formation_candle",
+            ""
+        )
+    ).strip()
+
+    validation_level = str(
+        vr_data.get(
+            "validation_level",
+            ""
+        )
+    ).strip()
+
+    sequence = str(
+        vr_data.get(
+            "sequence",
+            ""
+        )
+    ).strip()
+
+
+    if not original_level:
+
+        return False
+
+
+    if not formation_candle:
+
+        return False
+
+
+    if not validation_level:
+
+        return False
+
+
+    if validation_level.upper() in (
+        "N/A",
+        "NONE",
+        "UNKNOWN",
+        "NULL",
+        "..."
+    ):
+
+        return False
+
+
+    if not sequence:
+
+        return False
+
+
+    sequence_upper = sequence.upper()
+
+
+    # --------------------------------------------------------
+    # REQUIRED TECHNICAL LEVELS
+    # --------------------------------------------------------
+
+    if "RESISTANCE" not in sequence_upper:
+
+        return False
+
+
+    if "SUPPORT" not in sequence_upper:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # REQUIRED BREAK
+    # --------------------------------------------------------
+
+    break_exists = contains_any(
+        sequence_upper,
+        [
+            "BREAK",
+            "شکاند",
+            "پەڕاند",
+            "تێپەڕاند"
+        ]
+    )
+
+    if not break_exists:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # CHRONOLOGICAL ORDER
+    # --------------------------------------------------------
+
+    resistance_pos = first_position(
+        sequence_upper,
+        [
+            "RESISTANCE"
+        ]
+    )
+
+    support_pos = first_position(
+        sequence_upper,
+        [
             "SUPPORT"
+        ]
+    )
+
+    break_pos = first_position(
+        sequence_upper,
+        [
+            "BREAK",
+            "شکاند",
+            "پەڕاند",
+            "تێپەڕاند"
+        ]
+    )
+
+
+    if (
+        resistance_pos == -1
+        or
+        support_pos == -1
+        or
+        break_pos == -1
+    ):
+
+        return False
+
+
+    if not (
+        resistance_pos
+        <
+        support_pos
+        <
+        break_pos
+    ):
+
+        return False
+
+
+    # --------------------------------------------------------
+    # SUPPORT MUST BE AFTER RESISTANCE
+    # --------------------------------------------------------
+
+    after_resistance = contains_any(
+        sequence_upper,
+        [
+            "AFTER RESISTANCE",
+            "دوای RESISTANCE",
+            "لە دوای RESISTANCE"
+        ]
+    )
+
+    if not after_resistance:
+
+        return False
+
+
+    # --------------------------------------------------------
+    # SECOND DOWN MOVE
+    # --------------------------------------------------------
+
+    second_down = (
+        contains_any(
+            sequence_upper,
+            [
+                "DOWN AGAIN",
+                "دووبارە"
+            ]
         )
-
-        break_pos = sequence.find(
-            "BREAK"
+        and
+        contains_any(
+            sequence_upper,
+            [
+                "DOWN",
+                "خوارەوە",
+                "دابەزین"
+            ]
         )
+    )
+
+    if not second_down:
+
+        return False
 
 
-        if resistance_pos == -1:
-            return False
+    # --------------------------------------------------------
+    # SAME SUPPORT
+    # --------------------------------------------------------
 
-        if support_pos == -1:
-            return False
+    same_support = contains_any(
+        sequence_upper,
+        [
+            "SAME SUPPORT",
+            "هەمان SUPPORT"
+        ]
+    )
 
-        if break_pos == -1:
-            return False
+    if not same_support:
 
-
-        if not (
-            resistance_pos
-            <
-            support_pos
-            <
-            break_pos
-        ):
-
-            return False
+        return False
 
 
-        if (
-            "AFTER RESISTANCE"
-            not in sequence
-        ):
-
-            return False
+    return True
 
 
-        if "DOWN AGAIN" not in sequence:
+# ============================================================
+# VALID STRUCTURE CHECK
+# ============================================================
 
-            return False
+def get_valid_structures(
+    data
+):
+
+    vs_data = data.get(
+        "vs_detected",
+        {}
+    )
+
+    vr_data = data.get(
+        "vr_detected",
+        {}
+    )
 
 
-        if (
-            "SAME SUPPORT"
-            not in sequence
-        ):
+    vs_valid = verify_vs_v2(
+        vs_data
+    )
 
-            return False
-
-
-        return True
+    vr_valid = verify_vr_v2(
+        vr_data
+    )
 
 
-    return False
+    return (
+        vs_valid,
+        vr_valid
+    )
 
 
 # ============================================================
 # STRONG SIGNAL ENGINE
 # ============================================================
 
-def strong_signal_engine(data):
+def strong_signal_engine(
+    data
+):
 
     if not isinstance(
         data,
@@ -2317,12 +2591,14 @@ def strong_signal_engine(data):
 
         data = {}
 
+
     signal = str(
         data.get(
             "signal",
             "WAIT"
         )
     ).upper()
+
 
     score = safe_float(
         data.get(
@@ -2338,11 +2614,16 @@ def strong_signal_engine(data):
         )
     )
 
+
     if score is None:
+
         score = 0
 
+
     if confidence is None:
+
         confidence = 0
+
 
     confirmation = str(
         data.get(
@@ -2351,12 +2632,68 @@ def strong_signal_engine(data):
         )
     )
 
+
+    # ========================================================
+    # VERIFY BOTH STRUCTURES FIRST
+    # ========================================================
+
+    vs_valid, vr_valid = (
+        get_valid_structures(
+            data
+        )
+    )
+
+
+    # ========================================================
+    # FORCE INTERNAL STRUCTURE STATUS
+    # ========================================================
+
+    if isinstance(
+        data.get(
+            "vs_detected"
+        ),
+        dict
+    ):
+
+        data[
+            "vs_detected"
+        ][
+            "engine_valid"
+        ] = vs_valid
+
+
+    if isinstance(
+        data.get(
+            "vr_detected"
+        ),
+        dict
+    ):
+
+        data[
+            "vr_detected"
+        ][
+            "engine_valid"
+        ] = vr_valid
+
+
+    # ========================================================
+    # IMPORTANT:
+    # ZONE ONLY EXISTS WITH VALID VS OR VR
+    # ========================================================
+
+    if not vs_valid and not vr_valid:
+
+        data["zone"] = "N/A"
+        data["zone_price"] = "N/A"
+
+
     zone = str(
         data.get(
             "zone",
             ""
         )
-    )
+    ).strip()
+
 
     zone_price = str(
         data.get(
@@ -2365,8 +2702,11 @@ def strong_signal_engine(data):
         )
     ).strip()
 
+
     if not zone_price:
+
         zone_price = "N/A"
+
 
     rejection_reasons = []
 
@@ -2389,7 +2729,7 @@ def strong_signal_engine(data):
 
 
     # ========================================================
-    # AI WAIT
+    # WAIT FROM AI
     # ========================================================
 
     if signal == "WAIT":
@@ -2424,21 +2764,28 @@ def strong_signal_engine(data):
 
 
     # ========================================================
-    # VS / VR
+    # BUY → MUST HAVE VALID VS
     # ========================================================
 
-    if signal in (
-        "BUY",
-        "SELL"
-    ):
+    if signal == "BUY":
 
-        if not validate_vs_vr(
-            data,
-            signal
-        ):
+        if not vs_valid:
 
             rejection_reasons.append(
-                "هیچ VS/VR ـێکی HTF بە sequence ـی تەواو پشتڕاست نەکراوەتەوە."
+                "VS ـی تەواو و پشتڕاستکراوە نییە."
+            )
+
+
+    # ========================================================
+    # SELL → MUST HAVE VALID VR
+    # ========================================================
+
+    if signal == "SELL":
+
+        if not vr_valid:
+
+            rejection_reasons.append(
+                "VR ـی تەواو و پشتڕاستکراوە نییە."
             )
 
 
@@ -2465,21 +2812,29 @@ def strong_signal_engine(data):
     # ZONE
     # ========================================================
 
-    if not zone:
+    if not vs_valid and not vr_valid:
 
         rejection_reasons.append(
-            "Zone بەردەست نییە."
+            "هیچ VS یان VR ـێکی HTF بە تەواوی پشتڕاست نەکراوەتەوە."
         )
 
-    elif zone.upper() in (
-        "NONE",
-        "N/A",
-        "UNKNOWN"
-    ):
+    else:
 
-        rejection_reasons.append(
-            "Zone ـێکی ڕوونی HTF نییە."
-        )
+        if not zone:
+
+            rejection_reasons.append(
+                "Zone بەردەست نییە."
+            )
+
+        elif zone.upper() in (
+            "NONE",
+            "N/A",
+            "UNKNOWN"
+        ):
+
+            rejection_reasons.append(
+                "Zone ـێکی ڕوونی HTF نییە."
+            )
 
 
     # ========================================================
@@ -2512,19 +2867,37 @@ def strong_signal_engine(data):
             )
         )
 
-        if entry.upper() == "N/A":
+
+        if entry.upper() in (
+            "",
+            "N/A",
+            "NONE",
+            "UNKNOWN"
+        ):
 
             rejection_reasons.append(
                 "Entry دیاری نەکراوە."
             )
 
-        if sl.upper() == "N/A":
+
+        if sl.upper() in (
+            "",
+            "N/A",
+            "NONE",
+            "UNKNOWN"
+        ):
 
             rejection_reasons.append(
                 "SL دیاری نەکراوە."
             )
 
-        if tp1.upper() == "N/A":
+
+        if tp1.upper() in (
+            "",
+            "N/A",
+            "NONE",
+            "UNKNOWN"
+        ):
 
             rejection_reasons.append(
                 "TP1 دیاری نەکراوە."
@@ -2538,6 +2911,7 @@ def strong_signal_engine(data):
     calculated_rr = calculate_rr(
         data
     )
+
 
     if signal in (
         "BUY",
@@ -2573,6 +2947,7 @@ def strong_signal_engine(data):
         data["tp3"] = "N/A"
         data["rr"] = "N/A"
 
+
         data["rejection_reason"] = (
             " ".join(
                 rejection_reasons
@@ -2588,9 +2963,16 @@ def strong_signal_engine(data):
         ).strip()
 
 
+        # ----------------------------------------------------
+        # VALID ZONE EXISTS
+        # ----------------------------------------------------
+
         if (
+            (vs_valid or vr_valid)
+            and
             zone_price
-            and zone_price.upper()
+            and
+            zone_price.upper()
             not in (
                 "N/A",
                 "NONE",
@@ -2604,29 +2986,36 @@ def strong_signal_engine(data):
             )
 
 
-            if wait_for:
-
-                if zone_price not in wait_for:
-
-                    wait_for = (
-                        f"{wait_for}\n"
-                        f"📍 Zone Price: {zone_price}"
-                    )
-
-            else:
+            if not wait_for:
 
                 wait_for = (
                     f"چاوەڕێ بکە نرخ بگەڕێتەوە "
                     f"بۆ Zone ـی {zone_price}."
                 )
 
+            elif zone_price not in wait_for:
+
+                wait_for = (
+                    f"{wait_for}\n"
+                    f"📍 Zone Price: {zone_price}"
+                )
+
+
+        # ----------------------------------------------------
+        # NO VALID STRUCTURE
+        # ----------------------------------------------------
+
         else:
+
+            data["zone"] = "N/A"
+            data["zone_price"] = "N/A"
+
 
             if not wait_for:
 
                 wait_for = (
-                    "چاوەڕێی structure ـێکی تەواوی SNRZ "
-                    "و confirmation ـی ڕوون بکە."
+                    "چاوەڕێی VS یان VR ـێکی تەواو و "
+                    "پشتڕاستکراوە بکە."
                 )
 
 
@@ -2641,17 +3030,21 @@ def strong_signal_engine(data):
 
     data["signal"] = signal
 
+
     if calculated_rr is not None:
 
         data["rr"] = (
             f"1:{calculated_rr:.2f}"
         )
 
+
     data["rejection_reason"] = (
         "هیچ rejection filter ـێک نەشکا."
     )
 
+
     data["wait_for"] = "N/A"
+
 
     return data
 
@@ -2671,6 +3064,7 @@ def analyze_two_charts(
         "utf-8"
     )
 
+
     confirmation_base64 = base64.b64encode(
         confirmation_image
     ).decode(
@@ -2679,76 +3073,122 @@ def analyze_two_charts(
 
 
     user_prompt = r"""
-هەردوو وێنەی XAUUSD شیکەرەوە.
+هەردوو وێنەی XAUUSD بە وردی شیکەرەوە.
 
 IMAGE 1 = H1/H4
 IMAGE 2 = M1/M5
 
-سەرەتا هەموو H1/H4 ـەکە بە وردی پشکنە.
+============================================================
+STEP 1 — H1/H4 FULL SCAN
+============================================================
 
-پێش هەر BUY یان SELL ـێک:
+پێش هەر بڕیارێک:
 
-VS و VR ـی تەواو و پشتڕاستکراوە بدۆزەرەوە.
+هەموو candle ـە دیارەکانی H1/H4 لە چەپ بۆ ڕاست
+بپشکنە.
+
+تەنها ئەو شتانە بەکاربهێنە کە بە ڕوونی لە chart ـەکە
+دەبینرێن.
+
+هیچ candle ـێک مەخەملێنە.
+
+هیچ breakout ـێک مەخەملێنە.
 
 ============================================================
-VS
+STEP 2 — VS VERIFICATION V2
 ============================================================
 
 Support
 → Up
 → NEW Resistance AFTER Support
 → Up AGAIN
-→ Break SAME Resistance
+→ BREAK SAME Resistance
 → VS
 
 تەنها Resistance ـێک بەکاربهێنە کە دوای Support دروست بووە.
 
-ئەگەر Resistance پێش Support بوو:
-هیچ پەیوەندییەکی بە VS ـەوە نییە.
+Resistance ـی پێش Support بە تەواوی پشتگوێ بخە.
 
-ئەگەر Resistance ـی نوێ نەشکێندرابێت:
-VS = invalid.
+Touch = Break نییە.
+
+Wick = بە تەنیا Break نییە.
+
+Rejection = Break نییە.
+
+ئەگەر candle ـی Break بە ڕوونی نەبینرێت:
+
+break_confirmed = false
+valid = false
+
+ئەگەر هەموو sequence ـەکە بە ڕوونی هەبێت:
+
+break_confirmed = true
+valid = true
 
 ============================================================
-VR
+STEP 3 — VR VERIFICATION V2
 ============================================================
 
 Resistance
 → Down
 → NEW Support AFTER Resistance
 → Down AGAIN
-→ Break SAME Support
+→ BREAK SAME Support
 → VR
 
 تەنها Support ـێک بەکاربهێنە کە دوای Resistance دروست بووە.
 
-ئەگەر Support پێش Resistance بوو:
-هیچ پەیوەندییەکی بە VR ـەوە نییە.
+Support ـی پێش Resistance بە تەواوی پشتگوێ بخە.
 
-ئەگەر Support ـی نوێ نەشکێندرابێت:
-VR = invalid.
+Touch = Break نییە.
+
+Wick = بە تەنیا Break نییە.
+
+Rejection = Break نییە.
+
+ئەگەر candle ـی Break بە ڕوونی نەبینرێت:
+
+break_confirmed = false
+valid = false
+
+ئەگەر هەموو sequence ـەکە بە ڕوونی هەبێت:
+
+break_confirmed = true
+valid = true
 
 ============================================================
-ZONE
+STEP 4 — BOTH
 ============================================================
 
-دوای VS/VR ـی پشتڕاستکراو:
+هەردووکیان بپشکنە:
 
-کەندڵی دروستبوونی VS/VR
-+
-کەندڵی پێش ئەوە
+VS
+VR
 
-BODY ـەکانیان بەراورد بکە.
+تەنانەت ئەگەر signal = WAIT بێت.
 
-ئەو کەندڵەی BODY ـی کورتتری هەیە هەڵبژێرە.
+============================================================
+STEP 5 — ZONE
+============================================================
 
-هەموو HIGH تا LOW ـی ئەو کەندڵە:
-Zone ـە.
+Zone تەنها دوای VS/VR ـی valid دروست دەکرێت.
+
+کەندڵی دروستبوونی VS/VR بدۆزەرەوە.
+
+کەندڵی پێش ئەویش بدۆزەرەوە.
+
+BODY SIZE ـەکانیان بەراورد بکە.
+
+ئەوەی BODY ـی کورتتری هەیە هەڵبژێرە.
+
+تەواوی HIGH تا LOW ـی ئەو candle ـە:
+
+Zone
 
 هیچ Engulfing Zone ـێک بەکارمەهێنە.
 
 ============================================================
-PULLBACK
+STEP 6 — PULLBACK
 ============================================================
 
 VALID VS/VR
@@ -2758,34 +3198,32 @@ VALID VS/VR
 → Strong Signal
 → Entry
 
-ئەگەر نرخ نەگەڕابێتەوە بۆ Zone:
+ئەگەر Pullback نەکراوە:
 
 WAIT.
 
 ============================================================
-BUY
+STEP 7 — CONFIRMATION
 ============================================================
 
-تەنها:
+BUY:
 
 RBS
 SRR
 I.VR
 PO2
 
-============================================================
-SELL
-============================================================
-
-تەنها:
+SELL:
 
 SBR
 RSS
 I.VS
 PO2
 
+Confirmation پێش Pullback قبوڵ مەکە.
+
 ============================================================
-STRONG SIGNAL
+STEP 8 — STRONG SIGNAL
 ============================================================
 
 Score >= 80
@@ -2794,23 +3232,23 @@ Confidence >= 80%
 
 RR >= 1:2
 
-VS/VR ڕوون
+Valid VS/VR
 
-Zone ڕوون
+Valid Zone
 
-Price Retest کراوە
+Pullback / Retest
 
-Confirmation دوای Pullback دروست بووە
+Valid LTF Confirmation
 
-HTF/LTF هاوڕێکن
+HTF/LTF agreement
 
-Entry ڕوون
+Entry
 
-SL ڕوون
+SL
 
-TP ڕوون
+TP
 
-ئەگەر یەکێک لەمانە نەبێت:
+هەر یەکێک نەبێت:
 
 WAIT.
 
@@ -2818,9 +3256,9 @@ WAIT.
 LANGUAGE
 ============================================================
 
-هەموو explanatory text ـەکان لە JSON ـدا بە کوردی سۆرانی بنووسە.
+هەموو explanatory text ـەکان بە کوردی سۆرانی بن.
 
-تەنها ئەم ناوانە بە English بمێنن:
+تەنها ئەم technical names ـانە English بن:
 
 VS
 VR
@@ -2846,42 +3284,29 @@ M5
 HTF
 LTF
 
-بەتایبەتی:
+============================================================
+SEQUENCE FORMAT
+============================================================
 
-formation_candle
-sequence
-confirmation
-reasoning
-checks
-rejection_reason
-wait_for
-setup
-trend
-htf_zones
-
-دەبێت بە کوردی بن.
-
-نموونەی sequence ـی دروست:
+VS:
 
 "Support → بەرزبوونەوە → Resistance ـێکی نوێ دوای Support → بەرزبوونەوەی دووبارە → شکاندنی هەمان Resistance"
 
-نموونەی VR:
+VR:
 
-"Resistance → دابەزین → Support ـێکی نوێ دوای Resistance → دابەزینەوە → شکاندنی هەمان Support"
+"Resistance → دابەزین → Support ـێکی نوێ دوای Resistance → دابەزینەوەی دووبارە → شکاندنی هەمان Support"
 
 ============================================================
-WAIT
+FINAL RULE
 ============================================================
 
-ئەگەر Zone هەیە، zone_price ـی ڕاست بنووسە.
+ئەگەر structure بە ڕوونی هەیە و Break ـەکەش بە ڕوونی
+لە chart ـەکە دەبینرێت، valid بکە.
 
-ئەگەر نرخ هێشتا نەگەیشتووەتە Zone:
+ئەگەر structure ناقصە یان Break ـەکە ڕوون نییە،
+invalid بکە.
 
-wait_for دەبێت نرخی Zone ـەکەی تێدا بێت.
-
-نرخ مەخەڵە.
-
-تەنها ئەو نرخانە بەکاربهێنە کە لە chart ـەکە دەبینرێن.
+هیچ شتێک مەخەملێنە.
 
 Return ONLY valid JSON.
 """
@@ -2932,6 +3357,7 @@ Return ONLY valid JSON.
             cleaned
         )
 
+
         return strong_signal_engine(
             result
         )
@@ -2960,7 +3386,7 @@ Return ONLY valid JSON.
 
 
 # ============================================================
-# FORMAT VS / VR — SORANI KURDISH
+# FORMAT VS / VR
 # ============================================================
 
 def format_structure(
@@ -2973,11 +3399,13 @@ def format_structure(
         dict
     ):
 
-        return "هیچ زانیارییەک بەردەست نییە."
+        return (
+            "هیچ زانیارییەک بەردەست نییە."
+        )
 
 
     valid = data.get(
-        "valid",
+        "engine_valid",
         False
     )
 
@@ -3013,7 +3441,7 @@ def format_structure(
 
 
     status = (
-        "پشتڕاستکراوە ✅"
+        "پشتڕاستکراوە بە Engine V2 ✅"
         if valid
         else
         "پشتڕاست نەکراوەتەوە ❌"
@@ -3021,10 +3449,10 @@ def format_structure(
 
 
     break_text = (
-        "بەڵێ ✅"
+        "بەڵێ، شکاندن پشتڕاستکراوە ✅"
         if break_confirmed
         else
-        "نەخێر ❌"
+        "نەخێر، شکاندن پشتڕاست نەکراوە ❌"
     )
 
 
@@ -3046,7 +3474,7 @@ def format_structure(
 🔄 زنجیرەی پێکهاتە:
 {sequence}
 
-💥 شکاندنی Resistance:
+💥 شکاندنی هەمان Resistance:
 {break_text}
 """.strip()
 
@@ -3069,19 +3497,23 @@ def format_structure(
 🔄 زنجیرەی پێکهاتە:
 {sequence}
 
-💥 شکاندنی Support:
+💥 شکاندنی هەمان Support:
 {break_text}
 """.strip()
 
 
-    return "هیچ زانیارییەک بەردەست نییە."
+    return (
+        "هیچ زانیارییەک بەردەست نییە."
+    )
 
 
 # ============================================================
-# FORMAT SIGNAL — SORANI KURDISH
+# FORMAT SIGNAL
 # ============================================================
 
-def format_signal(data):
+def format_signal(
+    data
+):
 
     if not isinstance(
         data,
@@ -3101,15 +3533,21 @@ def format_signal(data):
 
     if signal == "BUY":
 
-        title = "🟢 سیگناڵی STRONG BUY"
+        title = (
+            "🟢 سیگناڵی STRONG BUY"
+        )
 
     elif signal == "SELL":
 
-        title = "🔴 سیگناڵی STRONG SELL"
+        title = (
+            "🔴 سیگناڵی STRONG SELL"
+        )
 
     else:
 
-        title = "🟡 چاوەڕوان بە"
+        title = (
+            "🟡 چاوەڕوان بە"
+        )
 
         signal = "WAIT"
 
@@ -3240,7 +3678,7 @@ def format_signal(data):
 👀 چاوەڕێی چی بکەین؟
 {data.get(
     "wait_for",
-    f"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone ـی {zone_price}."
+    "چاوەڕێی VS/VR ـی تەواو بکە."
 )}
 """
 
@@ -3391,8 +3829,7 @@ def handle_message(
 
             "zone_image": None,
 
-            "confirmation_image": None,
-
+            "confirmation_image": None
         }
 
 
@@ -3403,11 +3840,18 @@ def handle_message(
             """
 🥇 Gold Chart Analyzer PRO
 
-🧠 SNRZ Structure Engine چالاکە.
+🧠 SNRZ Structure Engine V2 چالاکە.
 
-سیستەم سەرەتا VS و VR ـی H1/H4 دەناسێت،
-پاشان نرخ چاوەڕێ دەکات بگەڕێتەوە بۆ Zone،
-دوای Pullback/Retest تەنها Confirmation ـی M1/M5 دەپشکنێت.
+سیستەم سەرەتا هەردوو VS و VR ـی H1/H4 بە وردی
+پشکنین دەکات.
+
+پاشان:
+
+VS/VR
+→ Zone
+→ Pullback / Retest
+→ M1/M5 Confirmation
+→ Strong Signal Check
 
 هەنگاوی 1️⃣:
 📸 H1 یان H4 ـی XAUUSD بنێرە.
@@ -3415,15 +3859,11 @@ def handle_message(
 هەنگاوی 2️⃣:
 📸 M1 یان M5 ـی XAUUSD بنێرە.
 
-پاشان:
+دەرئەنجام:
 
 🟢 STRONG BUY
 🔴 STRONG SELL
 🟡 WAIT
-
-ئەگەر WAIT بوو،
-هۆکاری WAIT و Zone Price ـەکە
-بە ڕوونی پیشان دەدرێت.
 """.strip()
         )
 
@@ -3441,63 +3881,92 @@ def handle_message(
             chat_id,
 
             """
-📚 SNRZ Structure Engine
+📚 SNRZ Structure Engine V2
 
-HTF:
-H1 / H4
+━━━━━━━━━━━━━━━━━━
 
-LTF:
-M1 / M5
+🟢 VS:
 
-VS:
-Support → Up → NEW Resistance AFTER Support
-→ Up → Break NEW Resistance
+Support
+→ بەرزبوونەوە
+→ Resistance ـێکی نوێ دوای Support
+→ بەرزبوونەوەی دووبارە
+→ شکاندنی هەمان Resistance
+→ VS
 
-VR:
-Resistance → Down → NEW Support AFTER Resistance
-→ Down → Break NEW Support
+🔴 VR:
 
-ZONE:
-VS/VR candle + previous candle
-→ compare body size
-→ shorter body wins
-→ entire candle HIGH-to-LOW = Zone
+Resistance
+→ دابەزین
+→ Support ـێکی نوێ دوای Resistance
+→ دابەزینەوەی دووبارە
+→ شکاندنی هەمان Support
+→ VR
 
-PULLBACK:
+━━━━━━━━━━━━━━━━━━
+
+🟦 Zone:
+
+کەندڵی VS/VR
++
+کەندڵی پێش ئەو
+
+BODY SIZE بەراورد دەکرێت.
+
+کەندڵی BODY ـی کورتتر هەڵدەبژێردرێت.
+
+تەواوی HIGH تا LOW:
 Zone
-→ wait for price to return/retest Zone
-→ ONLY THEN search for Confirmation
 
-BUY:
-RBS / SRR / I.VR / PO2
+━━━━━━━━━━━━━━━━━━
 
-SELL:
-SBR / RSS / I.VS / PO2
+🔄 Flow:
+
+VALID VS/VR
+→ Zone
+→ Pullback / Retest
+→ M1/M5 Confirmation
+→ Strong Signal Check
+→ Entry
+
+━━━━━━━━━━━━━━━━━━
+
+🟢 BUY:
+
+RBS
+SRR
+I.VR
+PO2
+
+🔴 SELL:
+
+SBR
+RSS
+I.VS
+PO2
+
+━━━━━━━━━━━━━━━━━━
 
 🔥 Strong Signal:
 
 Score >= 80
 Confidence >= 80%
 RR >= 1:2
-Clear VS/VR
-Price has retested Zone
-Clear confirmation AFTER Pullback
+VS/VR ـی valid
+Zone ـی valid
+Pullback / Retest
+Confirmation ـی دوای Pullback
 HTF + LTF agreement
 
-Sequence:
-
-VS/VR
-→ Zone
-→ Pullback / Retest
-→ Confirmation
-→ Strong Signal Check
-→ Entry
-
-ئەگەر مەرجەکان تەواو نەبن:
+ئەگەر یەکێک لەمانە نەبێت:
 
 🟡 WAIT
 
-هۆکاری WAIT + Zone Price بە ڕوونی پیشان دەدرێت.
+━━━━━━━━━━━━━━━━━━
+
+⚠️ Touch یان rejection بە Break دانانرێت.
+
+Break دەبێت بە ڕوونی لە chart ـەکە ببینرێت.
 """.strip()
         )
 
@@ -3542,7 +4011,7 @@ VS/VR
 
             {
                 "zone_image": None,
-                "confirmation_image": None,
+                "confirmation_image": None
             }
         )
 
@@ -3567,10 +4036,12 @@ VS/VR
                 """
 ✅ H1/H4 وەرگیرا.
 
-🔎 ئێستا سەرەتا VS و VR ـەکان دەناسین.
+🔎 ئێستا VS و VR ـی تەواوی H1/H4
+بە Verification Engine V2 پشکنین دەکەین.
 
 پاشان:
-📍 چاوەڕێی Pullback / Retest بۆ Zone دەکەین،
+📍 Zone ـی تەنها VS/VR ـی valid دیاری دەکەین.
+
 دوای ئەوە:
 📸 M1 یان M5 بۆ Confirmation.
 """.strip()
@@ -3599,9 +4070,10 @@ VS/VR
                 """
 ⏳ هەردوو chart وەرگیرا.
 
-🧠 SNRZ Structure Engine
+🧠 SNRZ Verification Engine V2
 
-VS / VR
+VS
+VR
 → Zone
 → Pullback
 → Confirmation
@@ -3701,7 +4173,7 @@ VS / VR
 def run():
 
     logger.info(
-        "Gold Chart Analyzer PRO started."
+        "Gold Chart Analyzer PRO V2 started."
     )
 
     logger.info(
@@ -3889,6 +4361,6 @@ def run():
 # START
 # ============================================================
 
-if __name__ == "__main__":
+if _name_ == "_main_":
 
     run()
