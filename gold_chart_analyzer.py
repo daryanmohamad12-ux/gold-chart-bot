@@ -3435,12 +3435,13 @@ def format_structure_detail(
         ),
         "",
 
-        "🕯️ کەندڵی دروستبوون:",
-        clean_text(
-            structure[
-                "formation_candle"
-            ),
-            "N/A",
+      "🕯️ کەندڵی دروستبوون:",
+clean_text(
+    structure[
+        "formation_candle"
+    ],
+    "N/A",
+),
         ),
         "",
 
