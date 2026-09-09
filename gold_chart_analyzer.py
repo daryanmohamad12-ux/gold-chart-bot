@@ -3240,31 +3240,36 @@ def missing_reasons(
         if signal == "BUY":
 
             reasons.append(
-                "VS ـی تەواو بە 5 step پشتڕاست نەکراوەتەوە."
+                "VS بە تەواوی پشتڕاست نەکراوەتەوە؛ "
+                "هەموو 5 هەنگاوەکە بە ڕوونی لە چارتدا نییە."
             )
 
         else:
 
             reasons.append(
-                "VR ـی تەواو بە 5 step پشتڕاست نەکراوەتەوە."
+                "VR بە تەواوی پشتڕاست نەکراوەتەوە؛ "
+                "هەموو 5 هەنگاوەکە بە ڕوونی لە چارتدا نییە."
             )
 
     if not checks["zone"]:
 
         reasons.append(
-            "Zone بە یاسای shorter body پشتڕاست نەکراوەتەوە."
+            "Zone بە یاسای SNRZ پشتڕاست نەکراوەتەوە؛ "
+            "کەمترین Body لە نێوان formation candle و previous candle دەبێت دیاری بکرێت."
         )
 
     if not checks["price_at_zone"]:
 
         reasons.append(
-            "نرخ هێشتا بە ڕوونی لە Zone ـەکە نییە."
+            "نرخ هێشتا نەگەیشتووەتە Zone ـەکە؛ "
+            "بۆیە کاتی Entry نییە."
         )
 
     if not checks["pullback"]:
 
         reasons.append(
-            "Pullback / Retest هێشتا تەواو نییە."
+            "Pullback / Retest هێشتا بە ڕوونی ڕووی نەداوە؛ "
+            "دەبێت نرخ بگەڕێتەوە بۆ Zone."
         )
 
     if not checks["confirmation"]:
@@ -3272,39 +3277,43 @@ def missing_reasons(
         if signal == "BUY":
 
             reasons.append(
-                "Confirmation ـی BUY "
-                "(RBS / SRR / I.VR / PO2) نییە."
+                "هیچ Confirmation ـێکی BUY دوای Retest نییە؛ "
+                "دەبێت RBS / SRR / I.VR / PO2 پشتڕاست بکرێتەوە."
             )
 
         else:
 
             reasons.append(
-                "Confirmation ـی SELL "
-                "(SBR / RSS / I.VS / PO2) نییە."
+                "هیچ Confirmation ـێکی SELL دوای Retest نییە؛ "
+                "دەبێت SBR / RSS / I.VS / PO2 پشتڕاست بکرێتەوە."
             )
 
     if not checks["htf_ltf"]:
 
         reasons.append(
-            "HTF و LTF بە یەک ئاراستەی ڕوون نین."
+            "HTF و LTF هێشتا بە یەک ئاراستەی ڕوون نین؛ "
+            "بۆ BUY هەردووکیان دەبێت BULLISH بن و بۆ SELL هەردووکیان BEARISH."
         )
 
     if not checks["levels"]:
 
         reasons.append(
-            "Entry / SL / TP لە شوێنی لۆجیکی نین."
+            "Entry / SL / TP بە شێوەیەکی لۆجیکی دیاری نەکراون؛ "
+            "بۆیە ناتوانین Trade بکەین."
         )
 
     if not checks["rr"]:
 
         reasons.append(
-            "RR کەمترە لە 1:2 یان ناتوانرێت حساب بکرێت."
+            "RR ـی setup ـەکە بە کەمترین 1:2 نییە "
+            "یان ناتوانرێت بە دڵنیایی حساب بکرێت."
         )
 
     if not checks["no_rejection"]:
 
         reasons.append(
-            "Strong rejection / fake breakout هەیە."
+            "لە چارتدا Strong Rejection یان Fake Breakout هەیە؛ "
+            "بۆیە سیگناڵ ڕەت دەکرێتەوە."
         )
 
     return reasons
@@ -3337,7 +3346,8 @@ def next_action(
         if signal == "BUY":
 
             return (
-                "چاوەڕێی VS ـی تەواو بکە: "
+                "ئێستا هیچ BUY ـێک مەکە. "
+                "چاوەڕێی VS ـی تەواو بکە:\n"
                 "Support → Up → NEW Resistance → "
                 "Up → Break هەمان NEW Resistance."
             )
@@ -3345,35 +3355,40 @@ def next_action(
         if signal == "SELL":
 
             return (
-                "چاوەڕێی VR ـی تەواو بکە: "
+                "ئێستا هیچ SELL ـێک مەکە. "
+                "چاوەڕێی VR ـی تەواو بکە:\n"
                 "Resistance → Down → NEW Support → "
                 "Down → Break هەمان NEW Support."
             )
 
         return (
-            "چاوەڕێی structure ـێکی ڕوونی VS یان VR بکە."
+            "ئێستا چاوەڕێ بکە تا VS یان VR بە تەواوی "
+            "لە چارتدا پشتڕاست بکرێتەوە."
         )
 
     if not checks["zone"]:
 
         return (
-            "Zone بە یاسای shorter body دروست بکە؛ "
-            "formation candle و previous candle دەبێت ڕوون بن."
+            "Zone هێشتا بە تەواوی پشتڕاست نەکراوەتەوە. "
+            "Formation candle و previous candle پێکەوە بەراورد دەکرێن "
+            "و ئەوەی Body ـی کورتتری هەیە Zone ـەکە دیاری دەکات."
         )
 
     if not checks["price_at_zone"]:
 
         return (
-            f"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone: "
-            f"{zone_text}"
+            f"ئێستا چاوەڕێی گەڕانەوەی نرخ بکە بۆ Zone:\n"
+            f"📍 {zone_text}\n\n"
+            "تا نرخ نەگەڕێتەوە بۆ Zone، Entry ناکەین."
         )
 
     if not checks["pullback"]:
 
         return (
-            f"نرخ لە Zone ـە، بەڵام Pullback / Retest "
-            f"هێشتا پشتڕاست نەکراوەتەوە.\n"
-            f"📍 Zone: {zone_text}"
+            f"نرخ نزیک یان لە Zone ـەکەیە، "
+            f"بەڵام Retest هێشتا پشتڕاست نەکراوەتەوە.\n"
+            f"📍 Zone: {zone_text}\n\n"
+            "چاوەڕێی Retest ـێکی ڕوون بکە."
         )
 
     if not checks["confirmation"]:
@@ -3381,48 +3396,57 @@ def next_action(
         if signal == "BUY":
 
             return (
-                "Retest تەواوە؛ چاوەڕێی "
-                "RBS / SRR / I.VR / PO2 ـی تەواو بکە."
+                "Retest تەواو بووە، "
+                "بەڵام Confirmation ـی BUY هێشتا نییە.\n\n"
+                "چاوەڕێی یەکێک لەم Confirmation ـانە بکە:\n"
+                "RBS / SRR / I.VR / PO2"
             )
 
         if signal == "SELL":
 
             return (
-                "Retest تەواوە؛ چاوەڕێی "
-                "SBR / RSS / I.VS / PO2 ـی تەواو بکە."
+                "Retest تەواو بووە، "
+                "بەڵام Confirmation ـی SELL هێشتا نییە.\n\n"
+                "چاوەڕێی یەکێک لەم Confirmation ـانە بکە:\n"
+                "SBR / RSS / I.VS / PO2"
             )
 
     if not checks["htf_ltf"]:
 
         return (
-            "چاوەڕێ بکە HTF و LTF لە یەک ئاراستەدا "
-            "کۆببنەوە."
+            "چاوەڕێ بکە HTF و LTF هەردووکیان "
+            "لە هەمان ئاراستەدا بن.\n\n"
+            "BUY → BULLISH + BULLISH\n"
+            "SELL → BEARISH + BEARISH"
         )
 
     if not checks["levels"]:
 
         return (
-            "چاوەڕێی Entry / SL / TP ـی لۆجیکی بکە."
+            "Setup ـەکە هێشتا Entry / SL / TP ـی "
+            "لۆجیکی نییە.\n\n"
+            "چاوەڕێ بکە تا هەموو Level ـەکان بە ڕوونی دیاری بکرێن."
         )
 
     if not checks["rr"]:
 
         return (
-            "چاوەڕێی setup ـێک بکە کە RR ـی "
+            "Setup ـەکە RR ـی پێویستی نییە.\n\n"
+            "چاوەڕێی Trade ـێک بکە کە RR ـی "
             "لانیکەم 1:2 هەبێت."
         )
 
     if not checks["no_rejection"]:
 
         return (
-            "چاوەڕێ بکە rejection / fake breakout "
-            "نەبێت."
+            "لە setup ـەکەدا Rejection یان Fake Breakout هەیە.\n\n"
+            "ئێستا Trade مەکە و چاوەڕێی setup ـێکی پاکتر بکە."
         )
 
     return (
-        "هەموو مەرجەکان هێشتا کۆنەبوونەتەوە."
+        "هەموو مەرجە سەرەکییەکان هێشتا بە تەواوی "
+        "کۆنەبوونەتەوە. چاوەڕێ بکە."
     )
-
 
 # ============================================================
 # BUILD PATH VALIDATION
