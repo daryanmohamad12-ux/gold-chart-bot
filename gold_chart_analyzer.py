@@ -1,31 +1,10 @@
 # ============================================================
-# gold_chart_analyzer.py
+# GOLD CHART ANALYZER PRO V7 - SNRZ EDITION
 # ============================================================
-# GOLD CHART ANALYZER PRO V7
-#
-# SNRZ STRUCTURE ENGINE
-# ------------------------------------------------------------
-#
-# H1/H4
-#   ↓
-# VALID VS / VR
-#   ↓
-# VALID ZONE
-#   ↓
-# PRICE RETEST / PULLBACK
-#   ↓
-# M1/M5 CONFIRMATION
-#   ↓
-# HTF/LTF AGREEMENT
-#   ↓
-# RR / ENTRY / SL / TP
-#   ↓
-# DETERMINISTIC ENGINE
-#   ↓
-# BUY / SELL / WAIT
-#
-# Gemini = Visual Analyst
-# Python  = Final Truth / Validator
+# Flow:
+# H1/H4 -> VS/VR -> Zone -> Retest -> M1/M5 Confirmation
+# -> HTF/LTF Agreement -> Entry/SL/TP -> RR -> BUY/SELL/WAIT
+# Gemini = visual analyst | Python = deterministic validator
 # ============================================================
 
 import os
@@ -41,4137 +20,939 @@ from typing import Any, Dict, Optional, List, Tuple
 from google import genai
 from google.genai import types
 
-
-# ============================================================
-# CONFIG
-# ============================================================
-
-TELEGRAM_BOT_TOKEN = os.getenv(
-    "TELEGRAM_BOT_TOKEN",
-    ""
-).strip()
-
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY",
-    ""
-).strip()
-
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-3.8-flash"
-).strip()
-
-GEMINI_FALLBACK_MODEL = os.getenv(
-    "GEMINI_FALLBACK_MODEL",
-    "gemini-3.7-flash"
-).strip()
-
-ADMIN_USER_ID = int(
-    os.getenv(
-        "ADMIN_USER_ID",
-        "5874840448"
-    )
-)
-
-ACCESS_FILE = os.getenv(
-    "ACCESS_FILE",
-    "allowed_users.json"
-)
-
-# ============================================================
-# SIGNAL REQUIREMENTS
-# ============================================================
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.7-flash").strip()
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "5874840448"))
+ACCESS_FILE = os.getenv("ACCESS_FILE", "allowed_users.json")
 
 MIN_STRONG_SCORE = 80
 MIN_STRONG_CONFIDENCE = 80
 MIN_RR = 2.0
-
 TELEGRAM_POLL_TIMEOUT = 30
 TELEGRAM_RETRY_DELAY = 5
-
 GEMINI_RETRIES = 3
 GEMINI_RETRY_DELAY = 3
-
 MAX_TELEGRAM_MESSAGE_LENGTH = 4000
-
 SESSION_TTL_SECONDS = 60 * 30
 
-
-# ============================================================
-# LOGGING
-# ============================================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-
-logger = logging.getLogger(
-    "GoldChartAnalyzerV7"
-)
-
-
-# ============================================================
-# CONFIG VALIDATION
-# ============================================================
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+logger = logging.getLogger("GoldChartAnalyzerV7")
 
 if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError(
-        "TELEGRAM_BOT_TOKEN is missing."
-    )
-
+    raise RuntimeError("TELEGRAM_BOT_TOKEN is missing.")
 if not GEMINI_API_KEY:
-    raise RuntimeError(
-        "GEMINI_API_KEY is missing."
-    )
+    raise RuntimeError("GEMINI_API_KEY is missing.")
 
+gemini = genai.Client(api_key=GEMINI_API_KEY)
 
-# ============================================================
-# GEMINI CLIENT
-# ============================================================
-
-gemini = genai.Client(
-    api_key=GEMINI_API_KEY
-)
-
-
-# ============================================================
-# TELEGRAM EXCEPTION
-# ============================================================
 
 class TelegramAPIError(Exception):
-
-    def __init__(
-        self,
-        message: str,
-        status_code: Optional[int] = None
-    ):
+    def __init__(self, message: str, status_code: Optional[int] = None):
         super().__init__(message)
         self.status_code = status_code
 
 
-# ============================================================
-# TELEGRAM BOT
-# ============================================================
-
 class TelegramBot:
-
-    def __init__(
-        self,
-        token: str
-    ):
-
+    def __init__(self, token: str):
         self.token = token
+        self.base_url = f"https://api.telegram.org/bot{token}"
 
-        self.base_url = (
-            f"https://api.telegram.org/bot{token}"
-        )
-
-    # --------------------------------------------------------
-    # Generic API
-    # --------------------------------------------------------
-
-    def call(
-        self,
-        method: str,
-        data: Optional[Dict[str, Any]] = None,
-        timeout: int = 60
-    ):
-
-        url = (
-            f"{self.base_url}/{method}"
-        )
-
+    def call(self, method: str, data: Optional[Dict[str, Any]] = None, timeout: int = 60):
         try:
-
-            response = requests.post(
-                url,
-                json=data or {},
-                timeout=timeout
-            )
-
+            response = requests.post(f"{self.base_url}/{method}", json=data or {}, timeout=timeout)
         except requests.RequestException as exc:
-
-            raise TelegramAPIError(
-                f"Telegram request failed: {exc}"
-            ) from exc
-
+            raise TelegramAPIError(f"Telegram request failed: {exc}") from exc
         status_code = response.status_code
-
         try:
-
             result = response.json()
-
         except ValueError as exc:
-
-            raise TelegramAPIError(
-                f"Telegram returned invalid JSON "
-                f"(HTTP {status_code})."
-            ) from exc
-
+            raise TelegramAPIError(f"Telegram returned invalid JSON (HTTP {status_code}).") from exc
         if status_code != 200:
-
-            description = result.get(
-                "description",
-                f"HTTP {status_code}"
-            )
-
-            raise TelegramAPIError(
-                f"{status_code}: {description}",
-                status_code=status_code
-            )
-
+            raise TelegramAPIError(result.get("description", f"HTTP {status_code}"), status_code)
         if not result.get("ok"):
-
-            description = result.get(
-                "description",
-                "Telegram API error"
-            )
-
-            raise TelegramAPIError(
-                description,
-                status_code=status_code
-            )
-
+            raise TelegramAPIError(result.get("description", "Telegram API error"), status_code)
         return result.get("result")
 
-    # --------------------------------------------------------
-    # getMe
-    # --------------------------------------------------------
-
     def get_me(self):
+        return self.call("getMe")
 
-        return self.call(
-            "getMe"
-        )
+    def delete_webhook(self, drop_pending_updates: bool = False):
+        return self.call("deleteWebhook", {"drop_pending_updates": drop_pending_updates})
 
-    # --------------------------------------------------------
-    # deleteWebhook
-    # --------------------------------------------------------
-
-    def delete_webhook(
-        self,
-        drop_pending_updates: bool = False
-    ):
-
-        return self.call(
-            "deleteWebhook",
-            {
-                "drop_pending_updates":
-                    drop_pending_updates
-            }
-        )
-
-    # --------------------------------------------------------
-    # getUpdates
-    # --------------------------------------------------------
-
-    def get_updates(
-        self,
-        offset: Optional[int] = None,
-        timeout: int = TELEGRAM_POLL_TIMEOUT
-    ):
-
-        payload = {
-            "timeout": timeout,
-            "allowed_updates": [
-                "message",
-                "callback_query"
-            ]
-        }
-
+    def get_updates(self, offset: Optional[int] = None, timeout: int = TELEGRAM_POLL_TIMEOUT):
+        payload = {"timeout": timeout, "allowed_updates": ["message", "callback_query"]}
         if offset is not None:
-
             payload["offset"] = offset
+        return self.call("getUpdates", payload, timeout=timeout + 15)
 
-        return self.call(
-            "getUpdates",
-            payload,
-            timeout=timeout + 15
-        )
-
-    # --------------------------------------------------------
-    # sendMessage
-    # --------------------------------------------------------
-
-    def send_message(
-        self,
-        chat_id: int,
-        text: str
-    ):
-
-        if not isinstance(
-            text,
-            str
-        ):
-
-            text = str(text)
-
+    def send_message(self, chat_id: int, text: str):
+        text = str(text or "")
         if len(text) <= MAX_TELEGRAM_MESSAGE_LENGTH:
-
-            return self.call(
-                "sendMessage",
-                {
-                    "chat_id": chat_id,
-                    "text": text
-                }
-            )
-
+            return self.call("sendMessage", {"chat_id": chat_id, "text": text})
         results = []
-
-        for start in range(
-            0,
-            len(text),
-            MAX_TELEGRAM_MESSAGE_LENGTH
-        ):
-
-            chunk = text[
-                start:
-                start + MAX_TELEGRAM_MESSAGE_LENGTH
-            ]
-
-            results.append(
-                self.call(
-                    "sendMessage",
-                    {
-                        "chat_id": chat_id,
-                        "text": chunk
-                    }
-                )
-            )
-
+        for start in range(0, len(text), MAX_TELEGRAM_MESSAGE_LENGTH):
+            results.append(self.call("sendMessage", {"chat_id": chat_id, "text": text[start:start + MAX_TELEGRAM_MESSAGE_LENGTH]}))
         return results
 
-    # --------------------------------------------------------
-    # answerCallbackQuery
-    # --------------------------------------------------------
-
-    def answer_callback_query(
-        self,
-        callback_query_id: str,
-        text: Optional[str] = None
-    ):
-
-        payload = {
-            "callback_query_id":
-                callback_query_id
-        }
-
+    def answer_callback_query(self, callback_query_id: str, text: Optional[str] = None):
+        payload = {"callback_query_id": callback_query_id}
         if text:
-
             payload["text"] = text
+        return self.call("answerCallbackQuery", payload)
 
-        return self.call(
-            "answerCallbackQuery",
-            payload
-        )
+    def get_file(self, file_id: str):
+        return self.call("getFile", {"file_id": file_id})
 
-    # --------------------------------------------------------
-    # getFile
-    # --------------------------------------------------------
-
-    def get_file(
-        self,
-        file_id: str
-    ):
-
-        return self.call(
-            "getFile",
-            {
-                "file_id": file_id
-            }
-        )
-
-    # --------------------------------------------------------
-    # downloadFile
-    # --------------------------------------------------------
-
-    def download_file(
-        self,
-        file_path: str
-    ):
-
-        url = (
-            f"https://api.telegram.org/file/bot"
-            f"{self.token}/{file_path}"
-        )
-
+    def download_file(self, file_path: str):
         try:
-
-            response = requests.get(
-                url,
-                timeout=60
-            )
-
+            response = requests.get(f"https://api.telegram.org/file/bot{self.token}/{file_path}", timeout=60)
             response.raise_for_status()
-
+            return response.content
         except requests.RequestException as exc:
-
-            raise TelegramAPIError(
-                f"File download failed: {exc}"
-            ) from exc
-
-        return response.content
+            raise TelegramAPIError(f"File download failed: {exc}") from exc
 
 
-telegram = TelegramBot(
-    TELEGRAM_BOT_TOKEN
-)
+telegram = TelegramBot(TELEGRAM_BOT_TOKEN)
 
 
 # ============================================================
-# ACCESS DATABASE
+# ACCESS / SESSIONS
 # ============================================================
 
 def load_allowed_users() -> set:
-
-    users = {
-        ADMIN_USER_ID
-    }
-
-    if not os.path.exists(
-        ACCESS_FILE
-    ):
-
+    users = {ADMIN_USER_ID}
+    if not os.path.exists(ACCESS_FILE):
         return users
-
     try:
-
-        with open(
-            ACCESS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
-            data = json.load(file)
-
-        if isinstance(
-            data,
-            list
-        ):
-
-            for user_id in data:
-
+        with open(ACCESS_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list):
+            for uid in data:
                 try:
-
-                    users.add(
-                        int(user_id)
-                    )
-
-                except (
-                    ValueError,
-                    TypeError
-                ):
-
-                    continue
-
+                    users.add(int(uid))
+                except (ValueError, TypeError):
+                    pass
     except Exception:
-
-        logger.exception(
-            "Could not load allowed users."
-        )
-
-    users.add(
-        ADMIN_USER_ID
-    )
-
+        logger.exception("Could not load allowed users.")
+    users.add(ADMIN_USER_ID)
     return users
 
 
 ALLOWED_USER_IDS = load_allowed_users()
+PENDING_ACCESS_REQUESTS: Dict[int, Dict[str, Any]] = {}
+ACCESS_CODES: Dict[str, int] = {}
+USER_SESSIONS: Dict[int, Dict[str, Any]] = {}
 
 
 def save_allowed_users():
-
     try:
-
-        with open(
-            ACCESS_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                sorted(
-                    ALLOWED_USER_IDS
-                ),
-                file,
-                indent=2,
-                ensure_ascii=False
-            )
-
+        with open(ACCESS_FILE, "w", encoding="utf-8") as f:
+            json.dump(sorted(ALLOWED_USER_IDS), f, indent=2, ensure_ascii=False)
     except Exception:
-
-        logger.exception(
-            "Could not save allowed users."
-        )
+        logger.exception("Could not save allowed users.")
 
 
-# ============================================================
-# ACCESS REQUESTS
-# ============================================================
-
-PENDING_ACCESS_REQUESTS: Dict[
-    int,
-    Dict[str, Any]
-] = {}
-
-ACCESS_CODES: Dict[
-    str,
-    int
-] = {}
+def reset_session(chat_id: int):
+    USER_SESSIONS.pop(chat_id, None)
 
 
-# ============================================================
-# SESSIONS
-# ============================================================
-
-USER_SESSIONS: Dict[
-    int,
-    Dict[str, Any]
-] = {}
-
-
-def reset_session(
-    chat_id: int
-):
-
-    USER_SESSIONS.pop(
-        chat_id,
-        None
-    )
-
-
-def get_session(
-    chat_id: int
-) -> Dict[str, Any]:
-
+def get_session(chat_id: int) -> Dict[str, Any]:
     now = time.time()
-
-    session = USER_SESSIONS.get(
-        chat_id
-    )
-
-    if session:
-
-        created_at = session.get(
-            "created_at",
-            now
-        )
-
-        if (
-            now - created_at
-            > SESSION_TTL_SECONDS
-        ):
-
-            USER_SESSIONS.pop(
-                chat_id,
-                None
-            )
-
-            session = None
-
+    session = USER_SESSIONS.get(chat_id)
+    if session and now - session.get("created_at", now) > SESSION_TTL_SECONDS:
+        USER_SESSIONS.pop(chat_id, None)
+        session = None
     if session is None:
-
-        session = {
-            "zone_image": None,
-            "confirmation_image": None,
-            "created_at": now
-        }
-
-        USER_SESSIONS[
-            chat_id
-        ] = session
-
+        session = {"zone_image": None, "confirmation_image": None, "created_at": now}
+        USER_SESSIONS[chat_id] = session
     return session
 
 
 def cleanup_sessions():
-
     now = time.time()
-
-    for chat_id, session in list(
-        USER_SESSIONS.items()
-    ):
-
-        created_at = session.get(
-            "created_at",
-            now
-        )
-
-        if (
-            now - created_at
-            > SESSION_TTL_SECONDS
-        ):
-
-            USER_SESSIONS.pop(
-                chat_id,
-                None
-            )
+    for chat_id, session in list(USER_SESSIONS.items()):
+        if now - session.get("created_at", now) > SESSION_TTL_SECONDS:
+            USER_SESSIONS.pop(chat_id, None)
 
 
-# ============================================================
-# ACCESS HELPERS
-# ============================================================
-
-def is_admin(
-    user_id: Optional[int]
-) -> bool:
-
-    return (
-        user_id == ADMIN_USER_ID
-    )
+def is_admin(user_id: Optional[int]) -> bool:
+    return user_id == ADMIN_USER_ID
 
 
-def is_allowed(
-    user_id: Optional[int]
-) -> bool:
-
-    return (
-        user_id in ALLOWED_USER_IDS
-    )
+def is_allowed(user_id: Optional[int]) -> bool:
+    return user_id in ALLOWED_USER_IDS
 
 
-def deny_access(
-    chat_id: int
-):
+def deny_access(chat_id: int):
+    telegram.send_message(chat_id, "⛔ دەستگەیشتن ڕەتکرایەوە.\n\nبۆ داواکاریی دەستڕاگەیشتن:\n🔑 /start")
 
-    telegram.send_message(
-        chat_id,
-        """
-⛔ دەستگەیشتن ڕەتکرایەوە.
-
-تۆ هێشتا ڕێگەپێدراوی
-Gold Chart Analyzer PRO نیت.
-
-بۆ داواکاریی دەستڕاگەیشتن:
-🔑 /start
-""".strip()
-    )
-
-
-# ============================================================
-# ACCESS CODE
-# ============================================================
 
 def generate_access_code() -> str:
-
     while True:
-
-        code = (
-            "GC-"
-            + secrets.token_hex(
-                3
-            ).upper()
-            + "-"
-            + secrets.token_hex(
-                2
-            ).upper()
-        )
-
+        code = "GC-" + secrets.token_hex(3).upper() + "-" + secrets.token_hex(2).upper()
         if code not in ACCESS_CODES:
-
             return code
 
 
-# ============================================================
-# ACCESS REQUEST
-# ============================================================
-
-def send_access_request(
-    message: Dict[str, Any],
-    chat_id: int,
-    user_id: int
-):
-
-    if is_allowed(
-        user_id
-    ):
-
+def send_access_request(message: Dict[str, Any], chat_id: int, user_id: int):
+    if is_allowed(user_id):
         return False
-
-    user = message.get(
-        "from",
-        {}
-    )
-
-    first_name = user.get(
-        "first_name",
-        "Unknown"
-    )
-
-    last_name = user.get(
-        "last_name",
-        ""
-    )
-
-    username = user.get(
-        "username",
-        ""
-    )
-
+    user = message.get("from", {})
+    first_name = user.get("first_name", "Unknown")
+    last_name = user.get("last_name", "")
+    username = user.get("username", "")
     if user_id in PENDING_ACCESS_REQUESTS:
-
-        request = PENDING_ACCESS_REQUESTS[
-            user_id
-        ]
-
-        telegram.send_message(
-            chat_id,
-            f"""
-⏳ داواکارییەکەت پێشتر نێردراوە.
-
-🔑 Access Code:
-{request.get("code", "N/A")}
-
-🆔 Telegram ID:
-{user_id}
-
-تکایە چاوەڕێی Admin بکە.
-""".strip()
-        )
-
+        request = PENDING_ACCESS_REQUESTS[user_id]
+        telegram.send_message(chat_id, f"⏳ داواکارییەکەت پێشتر نێردراوە.\n\n🔑 Access Code:\n{request.get('code', 'N/A')}\n\n🆔 Telegram ID:\n{user_id}\n\nتکایە چاوەڕێی Admin بکە.")
         return True
-
     code = generate_access_code()
-
-    PENDING_ACCESS_REQUESTS[
-        user_id
-    ] = {
-        "user_id": user_id,
-        "chat_id": chat_id,
-        "code": code,
-        "first_name": first_name,
-        "last_name": last_name,
-        "username": username,
-        "created_at": time.time()
-    }
-
-    ACCESS_CODES[
-        code
-    ] = user_id
-
-    telegram.send_message(
-        chat_id,
-        f"""
-⏳ داواکاریی دەستڕاگەیشتنت نێردرا بۆ Admin.
-
-━━━━━━━━━━━━━━━━━━
-
-🔑 Access Code:
-{code}
-
-🆔 Telegram ID:
-{user_id}
-
-━━━━━━━━━━━━━━━━━━
-
-👑 Admin پێویستە ڕێگەپێدانت پێبدات.
-
-تکایە چاوەڕێ بکە...
-""".strip()
-    )
-
-    full_name = (
-        f"{first_name} {last_name}"
-    ).strip()
-
-    username_text = (
-        f"@{username}"
-        if username
-        else "N/A"
-    )
-
-    admin_text = f"""
-🆕 NEW ACCESS REQUEST
-━━━━━━━━━━━━━━━━━━
-
-👤 Name:
-{full_name}
-
-🔗 Username:
-{username_text}
-
-🆔 User ID:
-{user_id}
-
-🔑 Access Code:
-{code}
-
-━━━━━━━━━━━━━━━━━━
-"""
-
-    keyboard = {
-        "inline_keyboard": [
-            [
-                {
-                    "text": "✅ APPROVE",
-                    "callback_data":
-                        f"approve:{code}"
-                },
-                {
-                    "text": "❌ REJECT",
-                    "callback_data":
-                        f"reject:{code}"
-                }
-            ]
-        ]
-    }
-
+    PENDING_ACCESS_REQUESTS[user_id] = {"user_id": user_id, "chat_id": chat_id, "code": code, "first_name": first_name, "last_name": last_name, "username": username, "created_at": time.time()}
+    ACCESS_CODES[code] = user_id
+    telegram.send_message(chat_id, f"⏳ داواکاریی دەستڕاگەیشتنت نێردرا بۆ Admin.\n\n🔑 Access Code:\n{code}\n\n🆔 Telegram ID:\n{user_id}\n\n👑 چاوەڕێی Admin بکە.")
+    full_name = f"{first_name} {last_name}".strip()
+    username_text = f"@{username}" if username else "N/A"
+    admin_text = f"🆕 NEW ACCESS REQUEST\n━━━━━━━━━━━━━━━━━━\n👤 Name:\n{full_name}\n\n🔗 Username:\n{username_text}\n\n🆔 User ID:\n{user_id}\n\n🔑 Access Code:\n{code}\n━━━━━━━━━━━━━━━━━━"
+    keyboard = {"inline_keyboard": [[{"text": "✅ APPROVE", "callback_data": f"approve:{code}"}, {"text": "❌ REJECT", "callback_data": f"reject:{code}"}]]}
     try:
-
-        telegram.call(
-            "sendMessage",
-            {
-                "chat_id":
-                    ADMIN_USER_ID,
-                "text":
-                    admin_text,
-                "reply_markup":
-                    keyboard
-            }
-        )
-
+        telegram.call("sendMessage", {"chat_id": ADMIN_USER_ID, "text": admin_text, "reply_markup": keyboard})
     except Exception:
-
-        logger.exception(
-            "Could not notify admin."
-        )
-
+        logger.exception("Could not notify admin.")
     return True
 
 
-# ============================================================
-# ACCESS CALLBACK
-# ============================================================
-
-def handle_access_callback(
-    callback_query: Dict[str, Any]
-):
-
-    callback_id = callback_query.get(
-        "id"
-    )
-
-    from_user = callback_query.get(
-        "from",
-        {}
-    )
-
-    admin_id = from_user.get(
-        "id"
-    )
-
-    data = callback_query.get(
-        "data",
-        ""
-    )
-
+def handle_access_callback(callback_query: Dict[str, Any]):
+    callback_id = callback_query.get("id")
+    admin_id = callback_query.get("from", {}).get("id")
+    data = callback_query.get("data", "")
     if admin_id != ADMIN_USER_ID:
-
-        telegram.answer_callback_query(
-            callback_id,
-            "⛔ تەنها Admin دەتوانێت."
-        )
-
+        telegram.answer_callback_query(callback_id, "⛔ تەنها Admin دەتوانێت.")
         return
-
     if ":" not in data:
-
-        telegram.answer_callback_query(
-            callback_id,
-            "❌ Request ـەکە نادروستە."
-        )
-
+        telegram.answer_callback_query(callback_id, "❌ Request ـەکە نادروستە.")
         return
-
-    action, code = data.split(
-        ":",
-        1
-    )
-
-    user_id = ACCESS_CODES.get(
-        code
-    )
-
-    if not user_id:
-
-        telegram.answer_callback_query(
-            callback_id,
-            "⚠️ Code نییە یان بەکارهاتووە."
-        )
-
+    action, code = data.split(":", 1)
+    user_id = ACCESS_CODES.get(code)
+    request = PENDING_ACCESS_REQUESTS.get(user_id) if user_id else None
+    if not user_id or not request:
+        telegram.answer_callback_query(callback_id, "⚠️ Request نییە یان پێشتر مامەڵەی لەگەڵ کراوە.")
         return
-
-    request = PENDING_ACCESS_REQUESTS.get(
-        user_id
-    )
-
-    if not request:
-
-        telegram.answer_callback_query(
-            callback_id,
-            "⚠️ Request پێشتر مامەڵەی لەگەڵ کراوە."
-        )
-
-        return
-
     if action == "approve":
-
-        ALLOWED_USER_IDS.add(
-            user_id
-        )
-
+        ALLOWED_USER_IDS.add(user_id)
         save_allowed_users()
-
-        PENDING_ACCESS_REQUESTS.pop(
-            user_id,
-            None
-        )
-
-        ACCESS_CODES.pop(
-            code,
-            None
-        )
-
-        telegram.answer_callback_query(
-            callback_id,
-            "✅ User approved."
-        )
-
+        PENDING_ACCESS_REQUESTS.pop(user_id, None)
+        ACCESS_CODES.pop(code, None)
+        telegram.answer_callback_query(callback_id, "✅ User approved.")
         try:
-
-            telegram.send_message(
-                user_id,
-                """
-✅ ڕێگەپێدراویت!
-
-━━━━━━━━━━━━━━━━━━
-
-🥇 Gold Chart Analyzer PRO V7
-
-🧠 SNRZ Structure Engine چالاکە.
-
-📸 هەنگاوی یەکەم:
-H1 یان H4 ـی XAUUSD بنێرە.
-""".strip()
-            )
-
+            telegram.send_message(user_id, "✅ ڕێگەپێدراویت!\n\n🥇 Gold Chart Analyzer PRO V7\n🧠 SNRZ Structure Engine چالاکە.\n\n📸 H1 یان H4 ـی XAUUSD بنێرە.")
         except Exception:
-
-            logger.exception(
-                "Could not notify approved user."
-            )
-
-        return
-
-    if action == "reject":
-
-        PENDING_ACCESS_REQUESTS.pop(
-            user_id,
-            None
-        )
-
-        ACCESS_CODES.pop(
-            code,
-            None
-        )
-
-        telegram.answer_callback_query(
-            callback_id,
-            "❌ User rejected."
-        )
-
+            logger.exception("Could not notify approved user.")
+    elif action == "reject":
+        PENDING_ACCESS_REQUESTS.pop(user_id, None)
+        ACCESS_CODES.pop(code, None)
+        telegram.answer_callback_query(callback_id, "❌ User rejected.")
         try:
-
-            telegram.send_message(
-                user_id,
-                """
-❌ داواکارییەکەت ڕەتکرایەوە.
-""".strip()
-            )
-
+            telegram.send_message(user_id, "❌ داواکارییەکەت ڕەتکرایەوە.")
         except Exception:
-
-            logger.exception(
-                "Could not notify rejected user."
-            )
-
-        return
+            logger.exception("Could not notify rejected user.")
 
 
 # ============================================================
 # ADMIN COMMANDS
 # ============================================================
 
-def handle_admin_command(
-    message: Dict[str, Any],
-    chat_id: int,
-    text: str
-) -> bool:
-
-    user_id = (
-        message.get(
-            "from",
-            {}
-        ).get(
-            "id"
-        )
-    )
-
-    # --------------------------------------------------------
-    # Only Admin
-    # --------------------------------------------------------
-
+def handle_admin_command(message: Dict[str, Any], chat_id: int, text: str) -> bool:
+    user_id = message.get("from", {}).get("id")
     if not is_admin(user_id):
         return False
-
-    # --------------------------------------------------------
-    # IMPORTANT:
-    # Photo messages and other non-text messages can have
-    # empty text. Never access split()[0] without checking.
-    # --------------------------------------------------------
-
     raw_text = str(text or "").strip()
-
     if not raw_text:
         return False
-
-    # --------------------------------------------------------
-    # SAFE COMMAND PARSING
-    # --------------------------------------------------------
-
     parts = raw_text.split(maxsplit=1)
-
-    command = (
-        parts[0]
-        .split("@", 1)[0]
-        .lower()
-        if parts
-        else ""
-    )
-
-    argument = (
-        parts[1].strip()
-        if len(parts) > 1
-        else ""
-    )
-
-    # --------------------------------------------------------
-    # ADD USER
-    # --------------------------------------------------------
+    command = parts[0].split("@", 1)[0].lower() if parts else ""
+    argument = parts[1].strip() if len(parts) > 1 else ""
 
     if command == "/adduser":
-
         if not argument:
-
-            telegram.send_message(
-                chat_id,
-                """
-❌ بەکارهێنانی هەڵەیە.
-
-نموونە:
-
-/adduser USER_ID
-""".strip()
-            )
-
+            telegram.send_message(chat_id, "❌ نموونە:\n/adduser USER_ID")
             return True
-
-        # Only first argument is used.
-        user_id_text = argument.split()[0]
-
         try:
-
-            new_user_id = int(
-                user_id_text
-            )
-
+            new_user_id = int(argument.split()[0])
         except (ValueError, TypeError):
-
-            telegram.send_message(
-                chat_id,
-                """
-❌ User ID دەبێت تەنها ژمارە بێت.
-
-نموونە:
-
-/adduser 123456789
-""".strip()
-            )
-
+            telegram.send_message(chat_id, "❌ User ID دەبێت ژمارە بێت.")
             return True
-
         if new_user_id <= 0:
-
-            telegram.send_message(
-                chat_id,
-                "❌ User ID ـەکە دروست نییە."
-            )
-
+            telegram.send_message(chat_id, "❌ User ID ـەکە دروست نییە.")
             return True
-
-        already_exists = (
-            new_user_id
-            in ALLOWED_USER_IDS
-        )
-
-        ALLOWED_USER_IDS.add(
-            new_user_id
-        )
-
+        existed = new_user_id in ALLOWED_USER_IDS
+        ALLOWED_USER_IDS.add(new_user_id)
         save_allowed_users()
-
-        # Remove pending request if exists.
-        request = (
-            PENDING_ACCESS_REQUESTS.pop(
-                new_user_id,
-                None
-            )
-        )
-
-        if request:
-
-            code = request.get(
-                "code"
-            )
-
-            if code:
-
-                ACCESS_CODES.pop(
-                    code,
-                    None
-                )
-
-        if already_exists:
-
-            telegram.send_message(
-                chat_id,
-                f"""
-ℹ️ ئەم User ـە پێشتر ڕێگەپێدراوە.
-
-🆔 {new_user_id}
-
-👥 Total:
-{len(ALLOWED_USER_IDS)}
-""".strip()
-            )
-
-        else:
-
-            telegram.send_message(
-                chat_id,
-                f"""
-✅ بەکارهێنەر زیادکرا.
-
-🆔 {new_user_id}
-
-👥 Total:
-{len(ALLOWED_USER_IDS)}
-""".strip()
-            )
-
+        req = PENDING_ACCESS_REQUESTS.pop(new_user_id, None)
+        if req:
+            ACCESS_CODES.pop(req.get("code"), None)
+        telegram.send_message(chat_id, f"{'ℹ️ پێشتر ڕێگەپێدراوە' if existed else '✅ بەکارهێنەر زیادکرا'}\n🆔 {new_user_id}\n👥 Total: {len(ALLOWED_USER_IDS)}")
         return True
-
-    # --------------------------------------------------------
-    # REMOVE USER
-    # --------------------------------------------------------
 
     if command == "/removeuser":
-
         if not argument:
-
-            telegram.send_message(
-                chat_id,
-                """
-❌ بەکارهێنانی هەڵەیە.
-
-نموونە:
-
-/removeuser USER_ID
-""".strip()
-            )
-
+            telegram.send_message(chat_id, "❌ نموونە:\n/removeuser USER_ID")
             return True
-
-        user_id_text = argument.split()[0]
-
         try:
-
-            remove_user_id = int(
-                user_id_text
-            )
-
+            remove_user_id = int(argument.split()[0])
         except (ValueError, TypeError):
-
-            telegram.send_message(
-                chat_id,
-                """
-❌ User ID دەبێت تەنها ژمارە بێت.
-
-نموونە:
-
-/removeuser 123456789
-""".strip()
-            )
-
+            telegram.send_message(chat_id, "❌ User ID دەبێت ژمارە بێت.")
             return True
-
-        # Never remove Admin.
         if remove_user_id == ADMIN_USER_ID:
-
-            telegram.send_message(
-                chat_id,
-                "⛔ ناتوانیت Admin بسڕیتەوە."
-            )
-
+            telegram.send_message(chat_id, "⛔ ناتوانیت Admin بسڕیتەوە.")
             return True
-
         if remove_user_id in ALLOWED_USER_IDS:
-
-            ALLOWED_USER_IDS.remove(
-                remove_user_id
-            )
-
+            ALLOWED_USER_IDS.remove(remove_user_id)
             save_allowed_users()
-
-            # Also reset their session.
-            reset_session(
-                remove_user_id
-            )
-
-            telegram.send_message(
-                chat_id,
-                f"""
-✅ User سڕایەوە.
-
-🆔 {remove_user_id}
-
-👥 Total:
-{len(ALLOWED_USER_IDS)}
-""".strip()
-            )
-
+            reset_session(remove_user_id)
+            telegram.send_message(chat_id, f"✅ User سڕایەوە.\n🆔 {remove_user_id}\n👥 Total: {len(ALLOWED_USER_IDS)}")
         else:
-
-            telegram.send_message(
-                chat_id,
-                f"""
-ℹ️ ئەم User ID ـە لە لیستی
-Allowed Users ـدا نییە.
-
-🆔 {remove_user_id}
-""".strip()
-            )
-
+            telegram.send_message(chat_id, f"ℹ️ ئەم User ID ـە لە لیستی Allowed Users ـدا نییە.\n🆔 {remove_user_id}")
         return True
-
-    # --------------------------------------------------------
-    # USERS
-    # --------------------------------------------------------
 
     if command == "/users":
-
-        if not ALLOWED_USER_IDS:
-
-            telegram.send_message(
-                chat_id,
-                "📭 هیچ بەکارهێنەرێک نییە."
-            )
-
-            return True
-
-        lines = []
-
-        for uid in sorted(
-            ALLOWED_USER_IDS
-        ):
-
-            if uid == ADMIN_USER_ID:
-
-                lines.append(
-                    f"👑 {uid} — ADMIN"
-                )
-
-            else:
-
-                lines.append(
-                    f"👤 {uid}"
-                )
-
-        telegram.send_message(
-            chat_id,
-            (
-                "👥 ALLOWED USERS\n"
-                "━━━━━━━━━━━━━━━━━━\n"
-                + "\n".join(lines)
-                + f"\n\n📊 Total: {len(ALLOWED_USER_IDS)}"
-            )
-        )
-
+        lines = [f"👑 {uid} — ADMIN" if uid == ADMIN_USER_ID else f"👤 {uid}" for uid in sorted(ALLOWED_USER_IDS)]
+        telegram.send_message(chat_id, "👥 ALLOWED USERS\n━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + f"\n\n📊 Total: {len(ALLOWED_USER_IDS)}")
         return True
-
-    # --------------------------------------------------------
-    # PENDING
-    # --------------------------------------------------------
 
     if command == "/pending":
-
         if not PENDING_ACCESS_REQUESTS:
-
-            telegram.send_message(
-                chat_id,
-                "📭 هیچ request ـێکی چاوەڕوان نییە."
-            )
-
+            telegram.send_message(chat_id, "📭 هیچ request ـێکی چاوەڕوان نییە.")
             return True
-
         lines = []
-
-        for uid, request in (
-            PENDING_ACCESS_REQUESTS.items()
-        ):
-
-            first_name = request.get(
-                "first_name",
-                "Unknown"
-            )
-
-            last_name = request.get(
-                "last_name",
-                ""
-            )
-
-            username = request.get(
-                "username",
-                ""
-            )
-
-            code = request.get(
-                "code",
-                "N/A"
-            )
-
-            full_name = (
-                f"{first_name} {last_name}"
-            ).strip()
-
-            username_text = (
-                f"@{username}"
-                if username
-                else "N/A"
-            )
-
-            lines.append(
-                (
-                    f"👤 {full_name}\n"
-                    f"🔗 {username_text}\n"
-                    f"🆔 {uid}\n"
-                    f"🔑 {code}\n"
-                    "━━━━━━━━━━━━━━━━━━"
-                )
-            )
-
-        telegram.send_message(
-            chat_id,
-            (
-                "⏳ PENDING REQUESTS\n"
-                "━━━━━━━━━━━━━━━━━━\n"
-                + "\n".join(lines)
-            )
-        )
-
+        for uid, req in PENDING_ACCESS_REQUESTS.items():
+            name = f"{req.get('first_name', 'Unknown')} {req.get('last_name', '')}".strip()
+            username = f"@{req.get('username')}" if req.get('username') else "N/A"
+            lines.append(f"👤 {name}\n🔗 {username}\n🆔 {uid}\n🔑 {req.get('code', 'N/A')}\n━━━━━━━━━━━━━━━━━━")
+        telegram.send_message(chat_id, "⏳ PENDING REQUESTS\n━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines))
         return True
-
-    # --------------------------------------------------------
-    # BROADCAST
-    # --------------------------------------------------------
 
     if command == "/broadcast":
-
         if not argument:
-
-            telegram.send_message(
-                chat_id,
-                """
-❌ پەیامەکە بنووسە.
-
-نموونە:
-
-/broadcast Hello everyone
-""".strip()
-            )
-
+            telegram.send_message(chat_id, "❌ نموونە:\n/broadcast Hello everyone")
             return True
-
-        success = 0
-        failed = 0
-
-        for uid in list(
-            ALLOWED_USER_IDS
-        ):
-
+        success = failed = 0
+        for uid in list(ALLOWED_USER_IDS):
             try:
-
-                telegram.send_message(
-                    uid,
-                    argument
-                )
-
+                telegram.send_message(uid, argument)
                 success += 1
-
             except Exception:
-
                 failed += 1
-
-                logger.exception(
-                    f"Broadcast failed for user {uid}"
-                )
-
-        telegram.send_message(
-            chat_id,
-            f"""
-📢 Broadcast تەواوبوو.
-
-✅ نێردراو:
-{success}
-
-❌ سەرکەوتوو نەبوو:
-{failed}
-""".strip()
-        )
-
+        telegram.send_message(chat_id, f"📢 Broadcast تەواوبوو.\n\n✅ نێردراو: {success}\n❌ سەرکەوتوو نەبوو: {failed}")
         return True
-
-    # --------------------------------------------------------
-    # ADMIN
-    # --------------------------------------------------------
 
     if command == "/admin":
-
-        telegram.send_message(
-            chat_id,
-            """
-👑 ADMIN PANEL
-━━━━━━━━━━━━━━━━━━
-
-➕ /adduser USER_ID
-
-➖ /removeuser USER_ID
-
-👥 /users
-
-⏳ /pending
-
-📢 /broadcast MESSAGE
-""".strip()
-        )
-
+        telegram.send_message(chat_id, "👑 ADMIN PANEL\n━━━━━━━━━━━━━━━━━━\n➕ /adduser USER_ID\n➖ /removeuser USER_ID\n👥 /users\n⏳ /pending\n📢 /broadcast MESSAGE")
         return True
-
-    # --------------------------------------------------------
-    # UNKNOWN ADMIN COMMAND
-    # --------------------------------------------------------
 
     if command.startswith("/"):
-
-        telegram.send_message(
-            chat_id,
-            """
-❌ فەرمانەکە نەناسراوە.
-
-👑 ADMIN COMMANDS:
-
-/admin
-/adduser USER_ID
-/removeuser USER_ID
-/users
-/pending
-/broadcast MESSAGE
-""".strip()
-        )
-
+        telegram.send_message(chat_id, "❌ فەرمانەکە نەناسراوە.\n\n/admin\n/adduser USER_ID\n/removeuser USER_ID\n/users\n/pending\n/broadcast MESSAGE")
         return True
-
     return False
 
+
 # ============================================================
-# GEMINI SYSTEM PROMPT
+# GEMINI PROMPT - CANONICAL STRUCTURE OUTPUT
 # ============================================================
 
-SYSTEM_PROMPT = r"""
+SYSTEM_PROMPT = r'''
 You are an ELITE XAUUSD SNRZ VISUAL STRUCTURE ANALYST.
+Python is the final validator. NEVER invent a trade.
 
-IMPORTANT:
-You must NOT guess a trade.
-
-Your job is to inspect the charts and return
-STRUCTURED EVIDENCE.
-
-Python performs final validation.
+IMAGE 1 = HTF H1/H4. IMAGE 2 = LTF M1/M5.
 
 ============================================================
-CHARTS
+STRICT SNRZ STRUCTURE
 ============================================================
 
-IMAGE 1:
-HTF = H1 or H4.
+VS VALID ONLY IF ALL FIVE VISUAL STEPS EXIST IN CHRONOLOGICAL ORDER:
+1) SUPPORT
+2) UP
+3) NEW RESISTANCE CREATED AFTER STEP 1 SUPPORT
+4) UP AGAIN
+5) BREAK OF THE SAME NEW RESISTANCE FROM STEP 3
 
-IMAGE 2:
-LTF = M1 or M5.
+VR VALID ONLY IF ALL FIVE VISUAL STEPS EXIST IN CHRONOLOGICAL ORDER:
+1) RESISTANCE
+2) DOWN
+3) NEW SUPPORT CREATED AFTER STEP 1 RESISTANCE
+4) DOWN AGAIN
+5) BREAK OF THE SAME NEW SUPPORT FROM STEP 3
 
-============================================================
-VS RULE
-============================================================
+CRITICAL:
+- An old/existing resistance before the support is NOT VS.
+- An old/existing support before the resistance is NOT VR.
+- Step 3 must explicitly be NEW and AFTER step 1.
+- Step 5 must explicitly break the SAME level created in step 3.
+- If the chart does not clearly prove this sequence, structure_valid=false and structure_direction=NONE.
+- Do not choose VS/VR merely because the chart is bullish/bearish.
+- Normal support/resistance alone is NOT VS/VR.
 
-VS is VALID ONLY when ALL five steps are visible:
+IMPORTANT OUTPUT FORMAT FOR STRUCTURE STEPS:
+The five structure_step fields MUST use these canonical English labels plus short evidence, so Python can validate them:
+VS example:
+"SUPPORT | clear support visible"
+"UP | bullish move from support"
+"NEW RESISTANCE AFTER SUPPORT | new high/resistance formed after support"
+"UP AGAIN | second bullish move"
+"BREAK SAME NEW RESISTANCE | same step-3 resistance broken"
 
-1. SUPPORT
-2. UP
-3. NEW RESISTANCE CREATED AFTER THAT SUPPORT
-4. UP AGAIN
-5. BREAK OF THAT SAME NEW RESISTANCE
+VR example:
+"RESISTANCE | clear resistance visible"
+"DOWN | bearish move from resistance"
+"NEW SUPPORT AFTER RESISTANCE | new low/support formed after resistance"
+"DOWN AGAIN | second bearish move"
+"BREAK SAME NEW SUPPORT | same step-3 support broken"
 
-IMPORTANT:
-
-A resistance that existed BEFORE the support
-does NOT count.
-
-The new resistance MUST be created AFTER support.
-
-If any step is missing:
-VS = INVALID.
-
-============================================================
-VR RULE
-============================================================
-
-VR is VALID ONLY when ALL five steps are visible:
-
-1. RESISTANCE
-2. DOWN
-3. NEW SUPPORT CREATED AFTER THAT RESISTANCE
-4. DOWN AGAIN
-5. BREAK OF THAT SAME NEW SUPPORT
-
-IMPORTANT:
-
-A support that existed BEFORE the resistance
-does NOT count.
-
-The new support MUST be created AFTER resistance.
-
-If any step is missing:
-VR = INVALID.
+If a step is not visually proven, write "NOT PROVEN" for that step and set structure_valid=false.
 
 ============================================================
-ZONE RULE
+ZONE
 ============================================================
-
-After a VALID VS or VR:
-
-Take:
-
-1. Formation candle
-2. Immediately previous candle
-
-Compare their CANDLE BODY sizes.
-
-The SHORTER BODY wins.
-
-The selected candle's FULL HIGH-TO-LOW
-is the Zone.
-
-Never use only body as Zone.
-
-Never use wick comparison.
-
-Never invent Zone.
+After a valid VS/VR:
+- Compare formation candle body with immediately previous candle body.
+- SHORTER BODY wins.
+- Selected candle FULL HIGH-to-LOW is the Zone.
+- Never use wick comparison to choose the candle.
+- Never invent Zone prices.
 
 ============================================================
 SEQUENCE
 ============================================================
-
-VALID VS / VR
-↓
-ZONE
-↓
-PRICE RETURNS / RETESTS ZONE
-↓
-CONFIRMATION
-↓
-ENTRY
-
-Confirmation BEFORE retest = INVALID.
+VALID VS/VR -> ZONE -> PRICE RETURNS/RETESTS ZONE -> CONFIRMATION -> ENTRY.
+Confirmation before retest is INVALID.
 
 ============================================================
-BUY
+CONFIRMATIONS
 ============================================================
-
-Allowed confirmation:
-
-RBS
-SRR
-I.VR
-PO2
+BUY: RBS, SRR, I.VR, PO2
+SELL: SBR, RSS, I.VS, PO2
 
 ============================================================
-SELL
+HTF/LTF
 ============================================================
-
-Allowed confirmation:
-
-SBR
-RSS
-I.VS
-PO2
-
-============================================================
-HTF / LTF
-============================================================
-
-BUY requires:
-
-HTF = BULLISH
-LTF = BULLISH
-
-SELL requires:
-
-HTF = BEARISH
-LTF = BEARISH
-
-RANGE, UNKNOWN, N/A or CONFLICT
-do NOT count as agreement.
-
-============================================================
-PRICE AT ZONE
-============================================================
-
-You must determine:
-
-price_at_zone = true
-
-ONLY if the LTF price visibly reaches/retests
-the HTF Zone.
-
-Otherwise:
-
-price_at_zone = false.
-
-============================================================
-PULLBACK
-============================================================
-
-pullback_valid = true
-
-ONLY if a real return/retest toward the Zone
-is visible.
-
-============================================================
-CONFIRMATION AFTER RETEST
-============================================================
-
-confirmation_after_retest = true
-
-ONLY if confirmation happens AFTER
-the Zone retest.
+BUY requires HTF=BULLISH and LTF=BULLISH.
+SELL requires HTF=BEARISH and LTF=BEARISH.
 
 ============================================================
 TRADE LEVELS
 ============================================================
-
-For BUY:
-
-SL < Entry < TP1
-
-For SELL:
-
-TP1 < Entry < SL
-
-RR must be at least 1:2.
+BUY: SL < Entry < TP1.
+SELL: TP1 < Entry < SL.
+RR >= 1:2 required.
+Strong rejection/fake breakout => WAIT.
 
 ============================================================
-REJECTION
+NO GUESSING
 ============================================================
+If any required visual evidence is unclear, mark the related boolean false.
+If structure is incomplete, structure_valid=false and structure_direction=NONE.
+Return JSON ONLY. All explanations except canonical SNRZ labels may be Sorani Kurdish.
+'''
 
-If strong rejection or fake breakout is visible:
-
-rejection_present = true.
-
-Then final result must be WAIT.
-
-============================================================
-IMPORTANT
-============================================================
-
-Do NOT invent prices.
-
-Do NOT invent VS.
-
-Do NOT invent VR.
-
-Do NOT call normal support VS.
-
-Do NOT call normal resistance VR.
-
-Do NOT accept confirmation before retest.
-
-Do NOT turn an incomplete setup into BUY/SELL.
-
-If evidence is missing:
-WAIT.
-
-============================================================
-OUTPUT
-============================================================
-
-Return JSON ONLY.
-
-Use exactly these fields:
-
-{
-  "signal": "BUY|SELL|WAIT",
-  "symbol": "XAUUSD",
-
-  "structure_direction": "VS|VR|NONE",
-
-  "structure_valid": true,
-  "structure_step_1": "...",
-  "structure_step_2": "...",
-  "structure_step_3": "...",
-  "structure_step_4": "...",
-  "structure_step_5": "...",
-
-  "vs_detected": "...",
-  "vr_detected": "...",
-
-  "zone_valid": true,
-  "zone_low": "...",
-  "zone_high": "...",
-  "zone": "...",
-  "zone_price": "...",
-  "zone_candle": "...",
-  "previous_candle": "...",
-  "selected_candle": "...",
-  "selected_body": "...",
-
-  "price_at_zone": false,
-  "pullback_valid": false,
-  "pullback_evidence": "...",
-
-  "confirmation": "...",
-  "confirmation_valid": false,
-  "confirmation_after_retest": false,
-  "confirmation_evidence": "...",
-
-  "htf_direction": "BULLISH|BEARISH|RANGE|UNKNOWN",
-  "ltf_direction": "BULLISH|BEARISH|RANGE|UNKNOWN",
-  "htf_ltf_agreement": false,
-
-  "entry_valid": false,
-  "sl_valid": false,
-  "tp_valid": false,
-
-  "entry": "N/A",
-  "sl": "N/A",
-  "tp1": "N/A",
-  "tp2": "N/A",
-  "tp3": "N/A",
-  "rr": "N/A",
-
-  "setup": "...",
-  "trend": "...",
-  "reasoning": "...",
-  "checks": "...",
-
-  "rejection_present": false,
-  "rejection_reason": "",
-
-  "wait_for": "",
-
-  "score": 0,
-  "confidence": 0
-}
-
-All explanations must be Sorani Kurdish.
-
-SNRZ names remain English.
-"""
-
-
-# ============================================================
-# GEMINI JSON SCHEMA
-# ============================================================
 
 GEMINI_SCHEMA = {
     "type": "object",
     "properties": {
-
-        "signal": {
-            "type": "string"
-        },
-
-        "symbol": {
-            "type": "string"
-        },
-
-        "structure_direction": {
-            "type": "string"
-        },
-
-        "structure_valid": {
-            "type": "boolean"
-        },
-
-        "structure_step_1": {
-            "type": "string"
-        },
-
-        "structure_step_2": {
-            "type": "string"
-        },
-
-        "structure_step_3": {
-            "type": "string"
-        },
-
-        "structure_step_4": {
-            "type": "string"
-        },
-
-        "structure_step_5": {
-            "type": "string"
-        },
-
-        "vs_detected": {
-            "type": "string"
-        },
-
-        "vr_detected": {
-            "type": "string"
-        },
-
-        "zone_valid": {
-            "type": "boolean"
-        },
-
-        "zone_low": {
-            "type": "string"
-        },
-
-        "zone_high": {
-            "type": "string"
-        },
-
-        "zone": {
-            "type": "string"
-        },
-
-        "zone_price": {
-            "type": "string"
-        },
-
-        "zone_candle": {
-            "type": "string"
-        },
-
-        "previous_candle": {
-            "type": "string"
-        },
-
-        "selected_candle": {
-            "type": "string"
-        },
-
-        "selected_body": {
-            "type": "string"
-        },
-
-        "price_at_zone": {
-            "type": "boolean"
-        },
-
-        "pullback_valid": {
-            "type": "boolean"
-        },
-
-        "pullback_evidence": {
-            "type": "string"
-        },
-
-        "confirmation": {
-            "type": "string"
-        },
-
-        "confirmation_valid": {
-            "type": "boolean"
-        },
-
-        "confirmation_after_retest": {
-            "type": "boolean"
-        },
-
-        "confirmation_evidence": {
-            "type": "string"
-        },
-
-        "htf_direction": {
-            "type": "string"
-        },
-
-        "ltf_direction": {
-            "type": "string"
-        },
-
-        "htf_ltf_agreement": {
-            "type": "boolean"
-        },
-
-        "entry_valid": {
-            "type": "boolean"
-        },
-
-        "sl_valid": {
-            "type": "boolean"
-        },
-
-        "tp_valid": {
-            "type": "boolean"
-        },
-
-        "entry": {
-            "type": "string"
-        },
-
-        "sl": {
-            "type": "string"
-        },
-
-        "tp1": {
-            "type": "string"
-        },
-
-        "tp2": {
-            "type": "string"
-        },
-
-        "tp3": {
-            "type": "string"
-        },
-
-        "rr": {
-            "type": "string"
-        },
-
-        "setup": {
-            "type": "string"
-        },
-
-        "trend": {
-            "type": "string"
-        },
-
-        "reasoning": {
-            "type": "string"
-        },
-
-        "checks": {
-            "type": "string"
-        },
-
-        "rejection_present": {
-            "type": "boolean"
-        },
-
-        "rejection_reason": {
-            "type": "string"
-        },
-
-        "wait_for": {
-            "type": "string"
-        },
-
-        "score": {
-            "type": "number"
-        },
-
-        "confidence": {
-            "type": "number"
-        }
+        "signal": {"type": "string"}, "symbol": {"type": "string"},
+        "structure_direction": {"type": "string"}, "structure_valid": {"type": "boolean"},
+        "structure_step_1": {"type": "string"}, "structure_step_2": {"type": "string"},
+        "structure_step_3": {"type": "string"}, "structure_step_4": {"type": "string"},
+        "structure_step_5": {"type": "string"}, "vs_detected": {"type": "string"}, "vr_detected": {"type": "string"},
+        "zone_valid": {"type": "boolean"}, "zone_low": {"type": "string"}, "zone_high": {"type": "string"},
+        "zone": {"type": "string"}, "zone_price": {"type": "string"}, "zone_candle": {"type": "string"},
+        "previous_candle": {"type": "string"}, "selected_candle": {"type": "string"}, "selected_body": {"type": "string"},
+        "price_at_zone": {"type": "boolean"}, "pullback_valid": {"type": "boolean"}, "pullback_evidence": {"type": "string"},
+        "confirmation": {"type": "string"}, "confirmation_valid": {"type": "boolean"},
+        "confirmation_after_retest": {"type": "boolean"}, "confirmation_evidence": {"type": "string"},
+        "htf_direction": {"type": "string"}, "ltf_direction": {"type": "string"}, "htf_ltf_agreement": {"type": "boolean"},
+        "entry_valid": {"type": "boolean"}, "sl_valid": {"type": "boolean"}, "tp_valid": {"type": "boolean"},
+        "entry": {"type": "string"}, "sl": {"type": "string"}, "tp1": {"type": "string"}, "tp2": {"type": "string"}, "tp3": {"type": "string"}, "rr": {"type": "string"},
+        "setup": {"type": "string"}, "trend": {"type": "string"}, "reasoning": {"type": "string"}, "checks": {"type": "string"},
+        "rejection_present": {"type": "boolean"}, "rejection_reason": {"type": "string"}, "wait_for": {"type": "string"},
+        "score": {"type": "number"}, "confidence": {"type": "number"}
     },
-
     "required": [
-        "signal",
-        "symbol",
-        "structure_direction",
-        "structure_valid",
-        "structure_step_1",
-        "structure_step_2",
-        "structure_step_3",
-        "structure_step_4",
-        "structure_step_5",
-        "vs_detected",
-        "vr_detected",
-        "zone_valid",
-        "zone_low",
-        "zone_high",
-        "zone",
-        "zone_price",
-        "zone_candle",
-        "previous_candle",
-        "selected_candle",
-        "selected_body",
-        "price_at_zone",
-        "pullback_valid",
-        "pullback_evidence",
-        "confirmation",
-        "confirmation_valid",
-        "confirmation_after_retest",
-        "confirmation_evidence",
-        "htf_direction",
-        "ltf_direction",
-        "htf_ltf_agreement",
-        "entry_valid",
-        "sl_valid",
-        "tp_valid",
-        "entry",
-        "sl",
-        "tp1",
-        "tp2",
-        "tp3",
-        "rr",
-        "setup",
-        "trend",
-        "reasoning",
-        "checks",
-        "rejection_present",
-        "rejection_reason",
-        "wait_for",
-        "score",
-        "confidence"
+        "signal","symbol","structure_direction","structure_valid","structure_step_1","structure_step_2","structure_step_3","structure_step_4","structure_step_5","vs_detected","vr_detected","zone_valid","zone_low","zone_high","zone","zone_price","zone_candle","previous_candle","selected_candle","selected_body","price_at_zone","pullback_valid","pullback_evidence","confirmation","confirmation_valid","confirmation_after_retest","confirmation_evidence","htf_direction","ltf_direction","htf_ltf_agreement","entry_valid","sl_valid","tp_valid","entry","sl","tp1","tp2","tp3","rr","setup","trend","reasoning","checks","rejection_present","rejection_reason","wait_for","score","confidence"
     ]
 }
 
+DEFAULT_FIELDS = list(GEMINI_SCHEMA["required"])
 
-# ============================================================
-# HELPERS
-# ============================================================
 
-def clean_text(
-    value: Any,
-    default: str = "N/A"
-) -> str:
-
+def clean_text(value: Any, default: str = "N/A") -> str:
     if value is None:
-
         return default
-
-    text = str(
-        value
-    ).strip()
-
-    if not text:
-
-        return default
-
-    return text
+    text = str(value).strip()
+    return text if text else default
 
 
-def safe_float(
-    value: Any
-) -> Optional[float]:
-
+def safe_float(value: Any) -> Optional[float]:
     try:
-
-        if value is None:
-
+        if value is None or isinstance(value, bool):
             return None
-
-        if isinstance(
-            value,
-            bool
-        ):
-
-            return None
-
-        if isinstance(
-            value,
-            (int, float)
-        ):
-
+        if isinstance(value, (int, float)):
             return float(value)
-
-        text = str(
-            value
-        ).replace(
-            ",",
-            ""
-        )
-
-        match = re.search(
-            r"-?\d+(?:\.\d+)?",
-            text
-        )
-
-        if not match:
-
-            return None
-
-        return float(
-            match.group()
-        )
-
+        match = re.search(r"-?\d+(?:\.\d+)?", str(value).replace(",", ""))
+        return float(match.group()) if match else None
     except Exception:
-
         return None
 
 
-def normalize_side(
-    value: Any
-) -> str:
-
-    text = clean_text(
-        value,
-        "WAIT"
-    ).upper()
-
-    if text == "BUY":
-        return "BUY"
-
-    if text == "SELL":
-        return "SELL"
-
-    return "WAIT"
-
-
-def normalize_structure(
-    value: Any
-) -> str:
-
-    text = clean_text(
-        value,
-        "NONE"
-    ).upper()
-
-    if text == "VS":
-        return "VS"
-
-    if text == "VR":
-        return "VR"
-
-    return "NONE"
-
-
-def parse_bool(
-    value: Any
-) -> bool:
-
-    if isinstance(
-        value,
-        bool
-    ):
-
+def parse_bool(value: Any) -> bool:
+    if isinstance(value, bool):
         return value
-
-    text = clean_text(
-        value,
-        ""
-    ).lower()
-
-    return text in {
-        "true",
-        "yes",
-        "valid",
-        "confirmed",
-        "complete"
-    }
+    return str(value or "").strip().lower() in {"true", "yes", "valid", "confirmed", "complete"}
 
 
-# ============================================================
-# NORMALIZE GEMINI RESULT
-# ============================================================
-
-DEFAULT_FIELDS = [
-    "signal",
-    "symbol",
-    "structure_direction",
-    "structure_valid",
-    "structure_step_1",
-    "structure_step_2",
-    "structure_step_3",
-    "structure_step_4",
-    "structure_step_5",
-    "vs_detected",
-    "vr_detected",
-    "zone_valid",
-    "zone_low",
-    "zone_high",
-    "zone",
-    "zone_price",
-    "zone_candle",
-    "previous_candle",
-    "selected_candle",
-    "selected_body",
-    "price_at_zone",
-    "pullback_valid",
-    "pullback_evidence",
-    "confirmation",
-    "confirmation_valid",
-    "confirmation_after_retest",
-    "confirmation_evidence",
-    "htf_direction",
-    "ltf_direction",
-    "htf_ltf_agreement",
-    "entry_valid",
-    "sl_valid",
-    "tp_valid",
-    "entry",
-    "sl",
-    "tp1",
-    "tp2",
-    "tp3",
-    "rr",
-    "setup",
-    "trend",
-    "reasoning",
-    "checks",
-    "rejection_present",
-    "rejection_reason",
-    "wait_for",
-    "score",
-    "confidence"
-]
+def normalize_side(value: Any) -> str:
+    text = clean_text(value, "WAIT").upper()
+    return text if text in {"BUY", "SELL"} else "WAIT"
 
 
-def normalize_result(
-    data: Dict[str, Any]
-) -> Dict[str, Any]:
+def normalize_structure(value: Any) -> str:
+    text = clean_text(value, "NONE").upper()
+    return text if text in {"VS", "VR"} else "NONE"
 
-    if not isinstance(
-        data,
-        dict
-    ):
 
+def normalize_result(data: Dict[str, Any]) -> Dict[str, Any]:
+    if not isinstance(data, dict):
         data = {}
-
-    result = {}
-
-    for key in DEFAULT_FIELDS:
-
-        result[key] = data.get(
-            key
-        )
-
-    result["signal"] = normalize_side(
-        result.get(
-            "signal"
-        )
-    )
-
+    result = {key: data.get(key) for key in DEFAULT_FIELDS}
+    result["signal"] = normalize_side(result.get("signal"))
     result["symbol"] = "XAUUSD"
-
-    result["structure_direction"] = (
-        normalize_structure(
-            result.get(
-                "structure_direction"
-            )
-        )
-    )
-
-    result["structure_valid"] = parse_bool(
-        result.get(
-            "structure_valid"
-        )
-    )
-
-    result["zone_valid"] = parse_bool(
-        result.get(
-            "zone_valid"
-        )
-    )
-
-    result["price_at_zone"] = parse_bool(
-        result.get(
-            "price_at_zone"
-        )
-    )
-
-    result["pullback_valid"] = parse_bool(
-        result.get(
-            "pullback_valid"
-        )
-    )
-
-    result["confirmation_valid"] = parse_bool(
-        result.get(
-            "confirmation_valid"
-        )
-    )
-
-    result["confirmation_after_retest"] = (
-        parse_bool(
-            result.get(
-                "confirmation_after_retest"
-            )
-        )
-    )
-
-    result["htf_ltf_agreement"] = parse_bool(
-        result.get(
-            "htf_ltf_agreement"
-        )
-    )
-
-    result["entry_valid"] = parse_bool(
-        result.get(
-            "entry_valid"
-        )
-    )
-
-    result["sl_valid"] = parse_bool(
-        result.get(
-            "sl_valid"
-        )
-    )
-
-    result["tp_valid"] = parse_bool(
-        result.get(
-            "tp_valid"
-        )
-    )
-
-    result["rejection_present"] = parse_bool(
-        result.get(
-            "rejection_present"
-        )
-    )
-
+    result["structure_direction"] = normalize_structure(result.get("structure_direction"))
+    for key in ["structure_valid","zone_valid","price_at_zone","pullback_valid","confirmation_valid","confirmation_after_retest","htf_ltf_agreement","entry_valid","sl_valid","tp_valid","rejection_present"]:
+        result[key] = parse_bool(result.get(key))
     return result
 
 
-# ============================================================
-# JSON CLEANER
-# ============================================================
-
-def clean_json(
-    text: str
-) -> str:
-
+def clean_json(text: str) -> str:
     if not text:
-
-        raise RuntimeError(
-            "Gemini returned empty response."
-        )
-
-    text = text.strip()
-
-    text = re.sub(
-        r"^```json\s*",
-        "",
-        text,
-        flags=re.IGNORECASE
-    )
-
-    text = re.sub(
-        r"^```\s*",
-        "",
-        text
-    )
-
-    text = re.sub(
-        r"\s*```$",
-        "",
-        text
-    )
-
-    start = text.find(
-        "{"
-    )
-
-    end = text.rfind(
-        "}"
-    )
-
+        raise RuntimeError("Gemini returned empty response.")
+    text = re.sub(r"^```json\s*", "", text.strip(), flags=re.I)
+    text = re.sub(r"^```\s*", "", text)
+    text = re.sub(r"\s*```$", "", text)
+    start, end = text.find("{"), text.rfind("}")
     if start == -1 or end == -1:
-
-        raise RuntimeError(
-            "Gemini did not return JSON."
-        )
-
-    return text[
-        start:end + 1
-    ]
+        raise RuntimeError("Gemini did not return JSON.")
+    return text[start:end + 1]
 
 
-# ============================================================
-# ZONE RANGE
-# ============================================================
-
-def parse_zone_range(
-    low_value: Any,
-    high_value: Any
-) -> Optional[Tuple[float, float]]:
-
-    low = safe_float(
-        low_value
-    )
-
-    high = safe_float(
-        high_value
-    )
-
-    if low is None or high is None:
-
+def parse_zone_range(low_value: Any, high_value: Any) -> Optional[Tuple[float, float]]:
+    low, high = safe_float(low_value), safe_float(high_value)
+    if low is None or high is None or high <= low:
         return None
-
-    if high <= low:
-
-        return None
-
-    return (
-        low,
-        high
-    )
+    return low, high
 
 
-def zone_from_data(
-    data: Dict[str, Any]
-) -> Optional[Tuple[float, float]]:
-
-    zone = parse_zone_range(
-        data.get("zone_low"),
-        data.get("zone_high")
-    )
-
+def zone_from_data(data: Dict[str, Any]) -> Optional[Tuple[float, float]]:
+    zone = parse_zone_range(data.get("zone_low"), data.get("zone_high"))
     if zone:
-
         return zone
-
-    text = clean_text(
-        data.get("zone_price"),
-        ""
-    )
-
-    numbers = re.findall(
-        r"-?\d+(?:\.\d+)?",
-        text.replace(
-            ",",
-            ""
-        )
-    )
-
-    if len(numbers) < 2:
-
-        return None
-
-    try:
-
-        a = float(
-            numbers[0]
-        )
-
-        b = float(
-            numbers[1]
-        )
-
-        if a == b:
-
-            return None
-
-        return (
-            min(a, b),
-            max(a, b)
-        )
-
-    except Exception:
-
-        return None
+    numbers = re.findall(r"-?\d+(?:\.\d+)?", clean_text(data.get("zone_price"), "").replace(",", ""))
+    if len(numbers) >= 2:
+        a, b = float(numbers[0]), float(numbers[1])
+        if a != b:
+            return min(a, b), max(a, b)
+    return None
 
 
 # ============================================================
-# STRICT STRUCTURE VALIDATION
+# ROBUST VS/VR VALIDATION
 # ============================================================
 
-def structure_steps_valid(
-    data: Dict[str, Any],
-    direction: str
-) -> bool:
+VS_SUPPORT = ("SUPPORT", "SUP", "پشتگیری", "پاڵپشتی", "پاڵپشت")
+VS_UP = ("UP", "BULL", "BULLISH", "سەر", "بەرز", "بەرەو سەر")
+VS_RESISTANCE = ("RESISTANCE", "RES", "بەرگری", "ڕێگر", "مقاومەت")
+VR_DOWN = ("DOWN", "BEAR", "BEARISH", "خوار", "دابەزین", "بەرەو خوار")
+VR_SUPPORT = VS_SUPPORT
+VR_RESISTANCE = VS_RESISTANCE
+NEW_WORDS = ("NEW", "نوێ", "دروست", "دروستکرا")
+AFTER_WORDS = ("AFTER", "POST", "دوای", "پاش", "لە دوای")
+SAME_WORDS = ("SAME", "هەمان", "هەمانە")
+BREAK_WORDS = ("BREAK", "شکاند", "شکێند", "شکاندنی", "شکاندرا")
+FORBIDDEN_OLD = ("OLD", "PREVIOUS", "EXISTING BEFORE", "BEFORE SUPPORT", "BEFORE RESISTANCE", "کۆن", "پێشتر", "پێش")
 
-    # --------------------------------------------------------
-    # BASIC CHECKS
-    # --------------------------------------------------------
 
+def contains_any(text: str, words: Tuple[str, ...]) -> bool:
+    return any(word in text for word in words)
+
+
+def structure_steps_valid(data: Dict[str, Any], direction: str) -> bool:
     if data.get("structure_valid") is not True:
         return False
-
-    if normalize_structure(
-        data.get("structure_direction")
-    ) != direction:
+    if normalize_structure(data.get("structure_direction")) != direction:
         return False
-
-    steps = [
-        clean_text(
-            data.get(f"structure_step_{i}"),
-            ""
-        ).strip().upper()
-        for i in range(1, 6)
-    ]
-
-    # All 5 steps must exist.
-    if any(not step for step in steps):
+    steps = [clean_text(data.get(f"structure_step_{i}"), "").strip().upper() for i in range(1, 6)]
+    if any(not step or step == "NOT PROVEN" for step in steps):
         return False
-
-    # --------------------------------------------------------
-    # VS
-    #
-    # SUPPORT
-    #   ↓
-    # UP
-    #   ↓
-    # NEW RESISTANCE AFTER SUPPORT
-    #   ↓
-    # UP AGAIN
-    #   ↓
-    # BREAK OF SAME NEW RESISTANCE
-    # --------------------------------------------------------
 
     if direction == "VS":
-
-        # STEP 1 = SUPPORT
-        if "SUPPORT" not in steps[0]:
+        if not contains_any(steps[0], VS_SUPPORT):
             return False
-
-        # STEP 2 = UP
-        if (
-            "UP" not in steps[1]
-            and "BULL" not in steps[1]
-        ):
+        if not contains_any(steps[1], VS_UP):
             return False
-
-        # STEP 3 = NEW RESISTANCE
-        if "RESISTANCE" not in steps[2]:
+        if not contains_any(steps[2], VS_RESISTANCE) or not contains_any(steps[2], NEW_WORDS) or not contains_any(steps[2], AFTER_WORDS):
             return False
-
-        # It MUST be NEW.
-        if "NEW" not in steps[2]:
+        if contains_any(steps[2], ("BEFORE SUPPORT", "EXISTED BEFORE", "OLD RESISTANCE", "PREVIOUS RESISTANCE")):
             return False
-
-        # It MUST be created AFTER support.
-        if (
-            "AFTER" not in steps[2]
-            and "POST" not in steps[2]
-        ):
+        if not contains_any(steps[3], VS_UP):
             return False
-
-        # Reject explicit contradiction.
-        forbidden_step3 = (
-            "BEFORE SUPPORT",
-            "EXISTED BEFORE",
-            "EXISTING BEFORE",
-            "OLD RESISTANCE",
-            "PREVIOUS RESISTANCE",
-            "RESISTANCE BEFORE SUPPORT"
-        )
-
-        if any(
-            phrase in steps[2]
-            for phrase in forbidden_step3
-        ):
+        if not contains_any(steps[4], BREAK_WORDS) or not contains_any(steps[4], VS_RESISTANCE):
             return False
-
-        # STEP 4 = UP AGAIN
-        if (
-            "UP" not in steps[3]
-            and "BULL" not in steps[3]
-        ):
+        if not contains_any(steps[4], SAME_WORDS) and "NEW RESISTANCE" not in steps[4]:
             return False
-
-        # STEP 5 = BREAK SAME NEW RESISTANCE
-        if "BREAK" not in steps[4]:
+        if contains_any(steps[4], ("OLD RESISTANCE", "PREVIOUS RESISTANCE", "DIFFERENT RESISTANCE", "ANOTHER RESISTANCE")):
             return False
-
-        if "RESISTANCE" not in steps[4]:
-            return False
-
-        # Must explicitly refer to SAME resistance.
-        if (
-            "SAME" not in steps[4]
-            and "NEW RESISTANCE" not in steps[4]
-        ):
-            return False
-
-        # Reject a break of an old/different resistance.
-        forbidden_step5 = (
-            "OLD RESISTANCE",
-            "PREVIOUS RESISTANCE",
-            "DIFFERENT RESISTANCE",
-            "ANOTHER RESISTANCE"
-        )
-
-        if any(
-            phrase in steps[4]
-            for phrase in forbidden_step5
-        ):
-            return False
-
         return True
-
-    # --------------------------------------------------------
-    # VR
-    #
-    # RESISTANCE
-    #   ↓
-    # DOWN
-    #   ↓
-    # NEW SUPPORT AFTER RESISTANCE
-    #   ↓
-    # DOWN AGAIN
-    #   ↓
-    # BREAK OF SAME NEW SUPPORT
-    # --------------------------------------------------------
 
     if direction == "VR":
-
-        # STEP 1 = RESISTANCE
-        if "RESISTANCE" not in steps[0]:
+        if not contains_any(steps[0], VR_RESISTANCE):
             return False
-
-        # STEP 2 = DOWN
-        if (
-            "DOWN" not in steps[1]
-            and "BEAR" not in steps[1]
-        ):
+        if not contains_any(steps[1], VR_DOWN):
             return False
-
-        # STEP 3 = NEW SUPPORT
-        if "SUPPORT" not in steps[2]:
+        if not contains_any(steps[2], VR_SUPPORT) or not contains_any(steps[2], NEW_WORDS) or not contains_any(steps[2], AFTER_WORDS):
             return False
-
-        # It MUST be NEW.
-        if "NEW" not in steps[2]:
+        if contains_any(steps[2], ("BEFORE RESISTANCE", "EXISTED BEFORE", "OLD SUPPORT", "PREVIOUS SUPPORT")):
             return False
-
-        # It MUST be created AFTER resistance.
-        if (
-            "AFTER" not in steps[2]
-            and "POST" not in steps[2]
-        ):
+        if not contains_any(steps[3], VR_DOWN):
             return False
-
-        # Reject explicit contradiction.
-        forbidden_step3 = (
-            "BEFORE RESISTANCE",
-            "EXISTED BEFORE",
-            "EXISTING BEFORE",
-            "OLD SUPPORT",
-            "PREVIOUS SUPPORT",
-            "SUPPORT BEFORE RESISTANCE"
-        )
-
-        if any(
-            phrase in steps[2]
-            for phrase in forbidden_step3
-        ):
+        if not contains_any(steps[4], BREAK_WORDS) or not contains_any(steps[4], VR_SUPPORT):
             return False
-
-        # STEP 4 = DOWN AGAIN
-        if (
-            "DOWN" not in steps[3]
-            and "BEAR" not in steps[3]
-        ):
+        if not contains_any(steps[4], SAME_WORDS) and "NEW SUPPORT" not in steps[4]:
             return False
-
-        # STEP 5 = BREAK SAME NEW SUPPORT
-        if "BREAK" not in steps[4]:
+        if contains_any(steps[4], ("OLD SUPPORT", "PREVIOUS SUPPORT", "DIFFERENT SUPPORT", "ANOTHER SUPPORT")):
             return False
-
-        if "SUPPORT" not in steps[4]:
-            return False
-
-        # Must explicitly refer to SAME support.
-        if (
-            "SAME" not in steps[4]
-            and "NEW SUPPORT" not in steps[4]
-        ):
-            return False
-
-        # Reject a break of an old/different support.
-        forbidden_step5 = (
-            "OLD SUPPORT",
-            "PREVIOUS SUPPORT",
-            "DIFFERENT SUPPORT",
-            "ANOTHER SUPPORT"
-        )
-
-        if any(
-            phrase in steps[4]
-            for phrase in forbidden_step5
-        ):
-            return False
-
         return True
-
     return False
 
-# ============================================================
-# STRICT ZONE VALIDATION
-# ============================================================
 
-def validate_zone(
-    data: Dict[str, Any],
-    signal: str
-) -> bool:
-
-    if not data.get(
-        "zone_valid"
-    ):
-
+def validate_structure(data: Dict[str, Any], signal_side: str) -> bool:
+    expected = "VS" if signal_side == "BUY" else "VR" if signal_side == "SELL" else "NONE"
+    if expected == "NONE":
         return False
-
-    structure = normalize_structure(
-        data.get(
-            "structure_direction"
-        )
-    )
-
-    expected = (
-        "VS"
-        if signal == "BUY"
-        else "VR"
-    )
-
+    structure = normalize_structure(data.get("structure_direction"))
     if structure != expected:
-
         return False
-
-    zone = zone_from_data(
-        data
-    )
-
-    if zone is None:
-
+    # Never allow both structures to be declared at the same time.
+    vs_text = clean_text(data.get("vs_detected"), "").upper()
+    vr_text = clean_text(data.get("vr_detected"), "").upper()
+    if structure == "VS" and contains_any(vr_text, ("VALID", "CONFIRMED")) and "INVALID" not in vr_text:
         return False
-
-    selected = clean_text(
-        data.get(
-            "selected_candle"
-        ),
-        ""
-    ).upper()
-
-    previous = clean_text(
-        data.get(
-            "previous_candle"
-        ),
-        ""
-    ).upper()
-
-    body = clean_text(
-        data.get(
-            "selected_body"
-        ),
-        ""
-    ).upper()
-
-    if not selected:
-
+    if structure == "VR" and contains_any(vs_text, ("VALID", "CONFIRMED")) and "INVALID" not in vs_text:
         return False
-
-    if not previous:
-
-        return False
-
-    # The AI must explicitly state shorter body.
-    shorter_words = (
-        "SHORTER",
-        "SMALLER",
-        "کورت",
-        "بچووک"
-    )
-
-    if not any(
-        word in body
-        for word in shorter_words
-    ):
-
-        return False
-
-    return True
+    return structure_steps_valid(data, expected)
 
 
 # ============================================================
-# PRICE AT ZONE
+# ZONE / RETEST / CONFIRMATION / LEVELS
 # ============================================================
 
-def validate_price_at_zone(
-    data: Dict[str, Any]
-) -> bool:
-
-    return (
-        data.get(
-            "price_at_zone"
-        )
-        is True
-    )
-
-
-# ============================================================
-# PULLBACK
-# ============================================================
-
-def validate_pullback(
-    data: Dict[str, Any]
-) -> bool:
-
-    if data.get(
-        "pullback_valid"
-    ) is not True:
-
+def validate_zone(data: Dict[str, Any], signal_side: str) -> bool:
+    if data.get("zone_valid") is not True:
         return False
-
-    evidence = clean_text(
-        data.get(
-            "pullback_evidence"
-        ),
-        ""
-    )
-
-    if not evidence:
-
+    expected = "VS" if signal_side == "BUY" else "VR"
+    if normalize_structure(data.get("structure_direction")) != expected:
         return False
-
-    return True
-
-
-# ============================================================
-# CONFIRMATION
-# ============================================================
-
-BUY_CONFIRMATIONS = {
-    "RBS",
-    "SRR",
-    "I.VR",
-    "PO2"
-}
-
-SELL_CONFIRMATIONS = {
-    "SBR",
-    "RSS",
-    "I.VS",
-    "PO2"
-}
+    if zone_from_data(data) is None:
+        return False
+    if not clean_text(data.get("selected_candle"), "") or not clean_text(data.get("previous_candle"), ""):
+        return False
+    body = clean_text(data.get("selected_body"), "").upper()
+    return contains_any(body, ("SHORTER", "SMALLER", "کورت", "بچووک"))
 
 
-def confirmation_name(
-    value: Any
-) -> str:
+def validate_price_at_zone(data: Dict[str, Any]) -> bool:
+    return data.get("price_at_zone") is True
 
-    text = clean_text(
-        value,
-        ""
-    ).upper()
 
-    for name in (
-        "I.VR",
-        "I.VS",
-        "RBS",
-        "SBR",
-        "SRR",
-        "RSS",
-        "PO2"
-    ):
+def validate_pullback(data: Dict[str, Any]) -> bool:
+    return data.get("pullback_valid") is True and bool(clean_text(data.get("pullback_evidence"), ""))
 
+
+BUY_CONFIRMATIONS = {"RBS", "SRR", "I.VR", "PO2"}
+SELL_CONFIRMATIONS = {"SBR", "RSS", "I.VS", "PO2"}
+
+
+def confirmation_name(value: Any) -> str:
+    text = clean_text(value, "").upper()
+    for name in ("I.VR", "I.VS", "RBS", "SBR", "SRR", "RSS", "PO2"):
         if name in text:
-
             return name
-
     return ""
 
 
-def validate_confirmation(
-    data: Dict[str, Any],
-    signal: str
-) -> bool:
-
-    name = confirmation_name(
-        data.get(
-            "confirmation"
-        )
-    )
-
-    if not name:
-
-        return False
-
-    if signal == "BUY":
-
-        if name not in BUY_CONFIRMATIONS:
-
-            return False
-
-    elif signal == "SELL":
-
-        if name not in SELL_CONFIRMATIONS:
-
-            return False
-
-    else:
-
-        return False
-
-    if data.get(
-        "confirmation_valid"
-    ) is not True:
-
-        return False
-
-    if data.get(
-        "confirmation_after_retest"
-    ) is not True:
-
-        return False
-
-    evidence = clean_text(
-        data.get(
-            "confirmation_evidence"
-        ),
-        ""
-    )
-
-    if not evidence:
-
-        return False
-
-    return True
-
-
-# ============================================================
-# HTF / LTF AGREEMENT
-# ============================================================
-
-def validate_htf_ltf(
-    data: Dict[str, Any],
-    signal: str
-) -> bool:
-
-    htf = clean_text(
-        data.get(
-            "htf_direction"
-        ),
-        "UNKNOWN"
-    ).upper()
-
-    ltf = clean_text(
-        data.get(
-            "ltf_direction"
-        ),
-        "UNKNOWN"
-    ).upper()
-
-    if signal == "BUY":
-
-        if htf != "BULLISH":
-
-            return False
-
-        if ltf != "BULLISH":
-
-            return False
-
-    elif signal == "SELL":
-
-        if htf != "BEARISH":
-
-            return False
-
-        if ltf != "BEARISH":
-
-            return False
-
-    else:
-
-        return False
-
-    return (
-        data.get(
-            "htf_ltf_agreement"
-        )
-        is True
-    )
-
-
-# ============================================================
-# TRADE LEVELS
-# ============================================================
-
-def calculate_rr(
-    data: Dict[str, Any],
-    signal: str
-) -> Optional[float]:
-
-    entry = safe_float(
-        data.get(
-            "entry"
-        )
-    )
-
-    sl = safe_float(
-        data.get(
-            "sl"
-        )
-    )
-
-    tp1 = safe_float(
-        data.get(
-            "tp1"
-        )
-    )
-
-    if None in (
-        entry,
-        sl,
-        tp1
-    ):
-
-        return None
-
-    if signal == "BUY":
-
-        risk = entry - sl
-        reward = tp1 - entry
-
-    elif signal == "SELL":
-
-        risk = sl - entry
-        reward = entry - tp1
-
-    else:
-
-        return None
-
-    if risk <= 0:
-
-        return None
-
-    if reward <= 0:
-
-        return None
-
-    return reward / risk
-
-
-def validate_trade_levels(
-    data: Dict[str, Any],
-    signal: str
-) -> bool:
-
-    entry = safe_float(
-        data.get(
-            "entry"
-        )
-    )
-
-    sl = safe_float(
-        data.get(
-            "sl"
-        )
-    )
-
-    tp1 = safe_float(
-        data.get(
-            "tp1"
-        )
-    )
-
-    if None in (
-        entry,
-        sl,
-        tp1
-    ):
-
-        return False
-
-    if data.get(
-        "entry_valid"
-    ) is not True:
-
-        return False
-
-    if data.get(
-        "sl_valid"
-    ) is not True:
-
-        return False
-
-    if data.get(
-        "tp_valid"
-    ) is not True:
-
-        return False
-
-    if signal == "BUY":
-
-        return (
-            sl < entry < tp1
-        )
-
-    if signal == "SELL":
-
-        return (
-            tp1 < entry < sl
-        )
-
+def validate_confirmation(data: Dict[str, Any], signal_side: str) -> bool:
+    name = confirmation_name(data.get("confirmation"))
+    allowed = BUY_CONFIRMATIONS if signal_side == "BUY" else SELL_CONFIRMATIONS if signal_side == "SELL" else set()
+    return bool(name and name in allowed and data.get("confirmation_valid") is True and data.get("confirmation_after_retest") is True and clean_text(data.get("confirmation_evidence"), ""))
+
+
+def validate_htf_ltf(data: Dict[str, Any], signal_side: str) -> bool:
+    htf = clean_text(data.get("htf_direction"), "UNKNOWN").upper()
+    ltf = clean_text(data.get("ltf_direction"), "UNKNOWN").upper()
+    if signal_side == "BUY":
+        return htf == "BULLISH" and ltf == "BULLISH" and data.get("htf_ltf_agreement") is True
+    if signal_side == "SELL":
+        return htf == "BEARISH" and ltf == "BEARISH" and data.get("htf_ltf_agreement") is True
     return False
 
 
+def calculate_rr(data: Dict[str, Any], signal_side: str) -> Optional[float]:
+    entry, sl, tp1 = safe_float(data.get("entry")), safe_float(data.get("sl")), safe_float(data.get("tp1"))
+    if None in (entry, sl, tp1):
+        return None
+    if signal_side == "BUY":
+        risk, reward = entry - sl, tp1 - entry
+    elif signal_side == "SELL":
+        risk, reward = sl - entry, entry - tp1
+    else:
+        return None
+    if risk <= 0 or reward <= 0:
+        return None
+    return reward / risk
+
+
+def validate_trade_levels(data: Dict[str, Any], signal_side: str) -> bool:
+    entry, sl, tp1 = safe_float(data.get("entry")), safe_float(data.get("sl")), safe_float(data.get("tp1"))
+    if None in (entry, sl, tp1):
+        return False
+    if not (data.get("entry_valid") is True and data.get("sl_valid") is True and data.get("tp_valid") is True):
+        return False
+    return (sl < entry < tp1) if signal_side == "BUY" else (tp1 < entry < sl) if signal_side == "SELL" else False
+
+
+def validate_rejection(data: Dict[str, Any]) -> bool:
+    return data.get("rejection_present") is not True
+
+
 # ============================================================
-# REJECTION
+# FINAL DETERMINISTIC ENGINE
 # ============================================================
 
-def validate_rejection(
-    data: Dict[str, Any]
-) -> bool:
-
-    return (
-        data.get(
-            "rejection_present"
-        )
-        is not True
-    )
-
-
-# ============================================================
-# DETERMINISTIC CHECKS
-# ============================================================
-
-def validation_checks(
-    data: Dict[str, Any],
-    signal: str
-) -> Dict[str, bool]:
-
-    structure = validate_structure(
-        data,
-        signal
-    )
-
-    zone = validate_zone(
-        data,
-        signal
-    )
-
-    price_zone = validate_price_at_zone(
-        data
-    )
-
-    pullback = validate_pullback(
-        data
-    )
-
-    confirmation = validate_confirmation(
-        data,
-        signal
-    )
-
-    htf_ltf = validate_htf_ltf(
-        data,
-        signal
-    )
-
-    levels = validate_trade_levels(
-        data,
-        signal
-    )
-
-    rr = calculate_rr(
-        data,
-        signal
-    )
-
-    rr_valid = (
-        rr is not None
-        and rr >= MIN_RR
-    )
-
-    no_rejection = validate_rejection(
-        data
-    )
-
+def validation_checks(data: Dict[str, Any], signal_side: str) -> Dict[str, bool]:
+    rr = calculate_rr(data, signal_side)
     return {
-        "structure": structure,
-        "zone": zone,
-        "price_at_zone": price_zone,
-        "pullback": pullback,
-        "confirmation": confirmation,
-        "htf_ltf": htf_ltf,
-        "levels": levels,
-        "rr": rr_valid,
-        "no_rejection": no_rejection
+        "structure": validate_structure(data, signal_side),
+        "zone": validate_zone(data, signal_side),
+        "price_at_zone": validate_price_at_zone(data),
+        "pullback": validate_pullback(data),
+        "confirmation": validate_confirmation(data, signal_side),
+        "htf_ltf": validate_htf_ltf(data, signal_side),
+        "levels": validate_trade_levels(data, signal_side),
+        "rr": rr is not None and rr >= MIN_RR,
+        "no_rejection": validate_rejection(data),
     }
 
 
-# ============================================================
-# SCORE
-# ============================================================
-
-def deterministic_score(
-    checks: Dict[str, bool]
-) -> int:
-
-    weights = {
-        "structure": 20,
-        "zone": 15,
-        "price_at_zone": 10,
-        "pullback": 10,
-        "confirmation": 15,
-        "htf_ltf": 10,
-        "levels": 5,
-        "rr": 10,
-        "no_rejection": 5
-    }
-
-    score = 0
-
-    for key, weight in weights.items():
-
-        if checks.get(
-            key,
-            False
-        ):
-
-            score += weight
-
-    return min(
-        score,
-        100
-    )
+def deterministic_score(checks: Dict[str, bool]) -> int:
+    weights = {"structure": 20, "zone": 15, "price_at_zone": 10, "pullback": 10, "confirmation": 15, "htf_ltf": 10, "levels": 5, "rr": 10, "no_rejection": 5}
+    return min(100, sum(weight for key, weight in weights.items() if checks.get(key, False)))
 
 
-def deterministic_confidence(
-    checks: Dict[str, bool],
-    score: int,
-    rr: Optional[float]
-) -> int:
-
+def deterministic_confidence(checks: Dict[str, bool], score: int, rr: Optional[float]) -> int:
     confidence = score
-
     if rr is not None:
-
         if rr >= 3.0:
-
             confidence += 5
-
         elif rr >= 2.5:
-
             confidence += 3
-
         elif rr >= 2.0:
-
             confidence += 1
-
-    if not checks.get(
-        "no_rejection",
-        False
-    ):
-
+    if not checks.get("no_rejection", False):
         confidence -= 20
-
-    return max(
-        0,
-        min(
-            100,
-            confidence
-        )
-    )
+    return max(0, min(100, confidence))
 
 
-# ============================================================
-# REASON GENERATOR
-# ============================================================
+def determine_direction(data: Dict[str, Any]) -> str:
+    structure = normalize_structure(data.get("structure_direction"))
+    return "BUY" if structure == "VS" else "SELL" if structure == "VR" else "WAIT"
 
-def missing_reasons(
-    data: Dict[str, Any],
-    signal: str,
-    checks: Dict[str, bool]
-) -> List[str]:
 
+def missing_reasons(data: Dict[str, Any], signal_side: str, checks: Dict[str, bool]) -> List[str]:
     reasons = []
-
     if not checks["structure"]:
-
-        if signal == "BUY":
-
-            reasons.append(
-                "VS ـی تەواو بە 5 step پشتڕاست نەکراوەتەوە."
-            )
-
-        else:
-
-            reasons.append(
-                "VR ـی تەواو بە 5 step پشتڕاست نەکراوەتەوە."
-            )
-
+        reasons.append("SNRZ structure ـی 5 step بە تەواوی پشتڕاست نەکراوەتەوە.")
     if not checks["zone"]:
-
-        reasons.append(
-            "Zone بە یاسای shorter body پشتڕاست نەکراوەتەوە."
-        )
-
+        reasons.append("Zone بە یاسای shorter body پشتڕاست نەکراوەتەوە.")
     if not checks["price_at_zone"]:
-
-        reasons.append(
-            "نرخ هێشتا بە ڕوونی لە Zone ـەکە نییە."
-        )
-
+        reasons.append("نرخ هێشتا بە ڕوونی نەگەڕاوەتەوە بۆ Zone.")
     if not checks["pullback"]:
-
-        reasons.append(
-            "Pullback / Retest هێشتا تەواو نییە."
-        )
-
+        reasons.append("Pullback / Retest هێشتا پشتڕاست نەکراوەتەوە.")
     if not checks["confirmation"]:
-
-        if signal == "BUY":
-
-            reasons.append(
-                "Confirmation ـی BUY "
-                "(RBS / SRR / I.VR / PO2) نییە."
-            )
-
-        else:
-
-            reasons.append(
-                "Confirmation ـی SELL "
-                "(SBR / RSS / I.VS / PO2) نییە."
-            )
-
+        reasons.append(f"Confirmation ـی {signal_side} دوای Retest نییە.")
     if not checks["htf_ltf"]:
-
-        reasons.append(
-            "HTF و LTF بە یەک ئاراستەی ڕوون نین."
-        )
-
+        reasons.append("HTF و LTF بە یەک ئاراستەی پێویست نین.")
     if not checks["levels"]:
-
-        reasons.append(
-            "Entry / SL / TP لە شوێنی لۆجیکی نین."
-        )
-
+        reasons.append("Entry / SL / TP بە شێوەی لۆجیکی پشتڕاست نەکراونەتەوە.")
     if not checks["rr"]:
-
-        reasons.append(
-            "RR کەمترە لە 1:2 یان ناتوانرێت حساب بکرێت."
-        )
-
+        reasons.append("RR کەمترە لە 1:2 یان ناتوانرێت بە دروستی حساب بکرێت.")
     if not checks["no_rejection"]:
-
-        reasons.append(
-            "Strong rejection / fake breakout هەیە."
-        )
-
+        reasons.append("Strong rejection یان fake breakout هەیە.")
     return reasons
 
 
-# ============================================================
-# WAIT NEXT ACTION
-# ============================================================
-
-def next_action(
-    data: Dict[str, Any],
-    signal: str,
-    checks: Dict[str, bool]
-) -> str:
-
-    zone = zone_from_data(
-        data
-    )
-
-    zone_text = "N/A"
-
-    if zone:
-
-        zone_text = (
-            f"{zone[0]:.2f} - {zone[1]:.2f}"
-        )
-
+def next_action(data: Dict[str, Any], signal_side: str, checks: Dict[str, bool]) -> str:
+    zone = zone_from_data(data)
+    zone_text = f"{zone[0]:.2f} - {zone[1]:.2f}" if zone else "N/A"
     if not checks["structure"]:
-
-        if signal == "BUY":
-
-            return (
-                "چاوەڕێی VS ـی تەواو بکە: "
-                "Support → Up → NEW Resistance → "
-                "Up → Break هەمان NEW Resistance."
-            )
-
-        if signal == "SELL":
-
-            return (
-                "چاوەڕێی VR ـی تەواو بکە: "
-                "Resistance → Down → NEW Support → "
-                "Down → Break هەمان NEW Support."
-            )
-
-        return (
-            "چاوەڕێی structure ـێکی ڕوونی VS یان VR بکە."
-        )
-
+        return "چاوەڕێی VS بکە: Support → Up → NEW Resistance → Up Again → Break SAME NEW Resistance." if signal_side == "BUY" else "چاوەڕێی VR بکە: Resistance → Down → NEW Support → Down Again → Break SAME NEW Support." if signal_side == "SELL" else "چاوەڕێی VS یان VR ـی تەواو بکە."
     if not checks["zone"]:
-
-        return (
-            "Zone بە یاسای shorter body دروست بکە؛ "
-            "formation candle و previous candle دەبێت ڕوون بن."
-        )
-
+        return "Zone هێشتا بە یاسای shorter body پشتڕاست نەکراوەتەوە."
     if not checks["price_at_zone"]:
-
-        return (
-            f"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone: "
-            f"{zone_text}"
-        )
-
+        return f"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone: {zone_text}"
     if not checks["pullback"]:
-
-        return (
-            f"نرخ لە Zone ـە، بەڵام Pullback / Retest "
-            f"هێشتا پشتڕاست نەکراوەتەوە.\n"
-            f"📍 Zone: {zone_text}"
-        )
-
+        return f"نرخ لە Zone ـە، بەڵام Retest هێشتا تەواو نییە.\n📍 Zone: {zone_text}"
     if not checks["confirmation"]:
-
-        if signal == "BUY":
-
-            return (
-                "Retest تەواوە؛ چاوەڕێی "
-                "RBS / SRR / I.VR / PO2 ـی تەواو بکە."
-            )
-
-        if signal == "SELL":
-
-            return (
-                "Retest تەواوە؛ چاوەڕێی "
-                "SBR / RSS / I.VS / PO2 ـی تەواو بکە."
-            )
-
+        return "Retest تەواوە؛ چاوەڕێی Confirmation ـی BUY: RBS / SRR / I.VR / PO2 بکە." if signal_side == "BUY" else "Retest تەواوە؛ چاوەڕێی Confirmation ـی SELL: SBR / RSS / I.VS / PO2 بکە."
     if not checks["htf_ltf"]:
-
-        return (
-            "چاوەڕێ بکە HTF و LTF لە یەک ئاراستەدا "
-            "کۆببنەوە."
-        )
-
+        return "چاوەڕێ بکە HTF و LTF لە یەک ئاراستەی پێویست کۆببنەوە."
     if not checks["levels"]:
-
-        return (
-            "چاوەڕێی Entry / SL / TP ـی لۆجیکی بکە."
-        )
-
+        return "چاوەڕێی Entry / SL / TP ـی لۆجیکی بکە."
     if not checks["rr"]:
-
-        return (
-            "چاوەڕێی setup ـێک بکە کە RR ـی "
-            "لانیکەم 1:2 هەبێت."
-        )
-
+        return "چاوەڕێی setup ـێک بکە کە RR ـی لانیکەم 1:2 هەبێت."
     if not checks["no_rejection"]:
-
-        return (
-            "چاوەڕێ بکە rejection / fake breakout "
-            "نەبێت."
-        )
-
-    return (
-        "هەموو مەرجەکان هێشتا کۆنەبوونەتەوە."
-    )
+        return "چاوەڕێی setup ـێکی پاک بکە کە rejection یان fake breakout تێدا نەبێت."
+    return "هەموو مەرجەکان هێشتا کۆنەبوونەتەوە."
 
 
-# ============================================================
-# BUILD PATH VALIDATION
-# ============================================================
-
-def build_path_validation(
-    data: Dict[str, Any],
-    signal: str
-) -> Dict[str, Any]:
-
-    checks = validation_checks(
-        data,
-        signal
-    )
-
-    score = deterministic_score(
-        checks
-    )
-
-    rr = calculate_rr(
-        data,
-        signal
-    )
-
-    confidence = deterministic_confidence(
-        checks,
-        score,
-        rr
-    )
-
-    reasons = missing_reasons(
-        data,
-        signal,
-        checks
-    )
-
-    mandatory = all(
-        checks.values()
-    )
-
-    valid = (
-        mandatory
-        and score >= MIN_STRONG_SCORE
-        and confidence >= MIN_STRONG_CONFIDENCE
-    )
-
-    return {
-        "signal": signal,
-        "checks": checks,
-        "score": score,
-        "confidence": confidence,
-        "rr": rr,
-        "reasons": reasons,
-        "valid": valid
-    }
-
-
-# ============================================================
-# DETERMINE SUPPORTED DIRECTION
-# ============================================================
-
-def determine_direction(
-    data: Dict[str, Any]
-) -> str:
-
-    structure = normalize_structure(
-        data.get(
-            "structure_direction"
-        )
-    )
-
-    if structure == "VS":
-
-        return "BUY"
-
-    if structure == "VR":
-
-        return "SELL"
-
-    return "WAIT"
-
-
-# ============================================================
-# FINAL ENGINE
-# ============================================================
-
-def run_final_engine(
-    raw_data: Dict[str, Any]
-) -> Dict[str, Any]:
-
-    data = normalize_result(
-        raw_data
-    )
-
-    structure_direction = normalize_structure(
-        data.get(
-            "structure_direction"
-        )
-    )
-
-    # --------------------------------------------------------
-    # NO STRUCTURE
-    # --------------------------------------------------------
-
-    if structure_direction == "NONE":
-
-        data["signal"] = "WAIT"
-
-        data["entry"] = "N/A"
-        data["sl"] = "N/A"
-        data["tp1"] = "N/A"
-        data["tp2"] = "N/A"
-        data["tp3"] = "N/A"
-        data["rr"] = "N/A"
-
-        data["score"] = 0
-        data["confidence"] = 0
-
-        data["rejection_reason"] = (
-            "VS یان VR ـی تەواو نەدۆزرایەوە."
-        )
-
-        data["wait_for"] = (
-            "چاوەڕێی VS یان VR ـی تەواو بکە."
-        )
-
+def run_final_engine(raw_data: Dict[str, Any]) -> Dict[str, Any]:
+    data = normalize_result(raw_data)
+    structure = normalize_structure(data.get("structure_direction"))
+    if structure == "NONE":
+        data.update({"signal": "WAIT", "entry": "N/A", "sl": "N/A", "tp1": "N/A", "tp2": "N/A", "tp3": "N/A", "rr": "N/A", "score": 0, "confidence": 0})
+        data["rejection_reason"] = "VS یان VR ـی تەواو بە دڵنیایی نەدۆزرایەوە."
+        data["wait_for"] = "چاوەڕێی VS یان VR ـی تەواو بکە."
         return data
-
-    # --------------------------------------------------------
-    # STRUCTURE → SIDE
-    # --------------------------------------------------------
-
-    signal = determine_direction(
-        data
-    )
-
-    validation = build_path_validation(
-        data,
-        signal
-    )
-
-    # --------------------------------------------------------
-    # VALID STRONG SIGNAL
-    # --------------------------------------------------------
-
-    if validation["valid"]:
-
-        data["signal"] = signal
-
-        data["score"] = validation[
-            "score"
-        ]
-
-        data["confidence"] = validation[
-            "confidence"
-        ]
-
-        rr = validation["rr"]
-
-        data["rr"] = (
-            f"1:{rr:.2f}"
-            if rr is not None
-            else "N/A"
-        )
-
-        data["rejection_reason"] = (
-            "هیچ rejection ـێکی بەهێز نییە."
-        )
-
+    signal_side = determine_direction(data)
+    checks = validation_checks(data, signal_side)
+    score = deterministic_score(checks)
+    rr = calculate_rr(data, signal_side)
+    confidence = deterministic_confidence(checks, score, rr)
+    valid = all(checks.values()) and score >= MIN_STRONG_SCORE and confidence >= MIN_STRONG_CONFIDENCE
+    data["score"], data["confidence"] = score, confidence
+    if valid:
+        data["signal"] = signal_side
+        data["rr"] = f"1:{rr:.2f}" if rr is not None else "N/A"
         data["wait_for"] = "N/A"
-
+        data["rejection_reason"] = "هیچ rejection ـێکی بەهێز نییە."
         return data
-
-    # --------------------------------------------------------
-    # WAIT
-    # --------------------------------------------------------
-
     data["signal"] = "WAIT"
-
-    data["score"] = validation[
-        "score"
-    ]
-
-    data["confidence"] = validation[
-        "confidence"
-    ]
-
-    data["entry"] = "N/A"
-    data["sl"] = "N/A"
-    data["tp1"] = "N/A"
-    data["tp2"] = "N/A"
-    data["tp3"] = "N/A"
-    data["rr"] = "N/A"
-
-    reasons = validation[
-        "reasons"
-    ]
-
-    if reasons:
-
-        data["rejection_reason"] = (
-            "\n".join(
-                f"❌ {reason}"
-                for reason in reasons
-            )
-        )
-
-    else:
-
-        data["rejection_reason"] = (
-            "هەموو مەرجەکانی Strong Signal "
-            "کۆنەبوونەتەوە."
-        )
-
-    checks = validation[
-        "checks"
-    ]
-
-    data["wait_for"] = next_action(
-        data,
-        signal,
-        checks
-    )
-
+    data["entry"] = data["sl"] = data["tp1"] = data["tp2"] = data["tp3"] = data["rr"] = "N/A"
+    reasons = missing_reasons(data, signal_side, checks)
+    data["rejection_reason"] = "\n".join(f"❌ {r}" for r in reasons) if reasons else "هەموو مەرجەکانی Strong Signal تەواو نەبوون."
+    data["wait_for"] = next_action(data, signal_side, checks)
     return data
 
 
 # ============================================================
-# GEMINI IMAGE PART
+# GEMINI
 # ============================================================
 
-def make_image_part(
-    image_bytes: bytes,
-    mime_type: str = "image/jpeg"
-):
-
-    return types.Part.from_bytes(
-        data=image_bytes,
-        mime_type=mime_type
-    )
+def make_image_part(image_bytes: bytes, mime_type: str = "image/jpeg"):
+    return types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
 
-# ============================================================
-# GEMINI CALL
-# ============================================================
+def call_gemini_model(model_name: str, zone_image: bytes, confirmation_image: bytes) -> str:
+    prompt = r'''
+Analyze TWO XAUUSD screenshots.
+IMAGE 1 = H1/H4 HTF. IMAGE 2 = M1/M5 LTF.
 
-def call_gemini_model(
-    model_name: str,
-    zone_image: bytes,
-    confirmation_image: bytes
-) -> str:
+Follow the system prompt exactly.
 
-    prompt = """
-Analyze these TWO XAUUSD screenshots.
+Before declaring VS or VR, verify all five steps visually and chronologically.
+For structure_step_1..5 use the canonical English labels exactly:
+VS: SUPPORT | ..., UP | ..., NEW RESISTANCE AFTER SUPPORT | ..., UP AGAIN | ..., BREAK SAME NEW RESISTANCE | ...
+VR: RESISTANCE | ..., DOWN | ..., NEW SUPPORT AFTER RESISTANCE | ..., DOWN AGAIN | ..., BREAK SAME NEW SUPPORT | ...
+If not visually proven, use NOT PROVEN and structure_valid=false, structure_direction=NONE.
 
-IMAGE 1 = HTF H1/H4.
-IMAGE 2 = LTF M1/M5.
-
-Follow the SYSTEM PROMPT exactly.
-
-DO NOT GUESS.
-
-You must identify:
-
-VS or VR
-→ Zone
-→ Price at Zone
-→ Pullback/Retest
-→ Confirmation after Retest
-→ HTF/LTF agreement
-→ Entry/SL/TP
-→ RR
-
-If any evidence is unclear:
-set the related boolean to false.
-
-If structure is incomplete:
-structure_valid = false.
-
-If Zone is unclear:
-zone_valid = false.
-
-If price has not returned to Zone:
-price_at_zone = false.
-
-If confirmation happened before retest:
-confirmation_after_retest = false.
-
-If HTF/LTF are not explicitly aligned:
-htf_ltf_agreement = false.
-
+Do not guess Zone, prices, retest, confirmation, or levels.
 Return JSON ONLY.
-"""
-
-    image1 = make_image_part(
-        zone_image
-    )
-
-    image2 = make_image_part(
-        confirmation_image
-    )
-
-    # --------------------------------------------------------
-    # Primary config
-    # --------------------------------------------------------
-
-    config = types.GenerateContentConfig(
-        temperature=0.1,
-        response_mime_type="application/json",
-        response_schema=GEMINI_SCHEMA
-    )
-
+'''
+    image1 = make_image_part(zone_image)
+    image2 = make_image_part(confirmation_image)
+    config = types.GenerateContentConfig(temperature=0.1, response_mime_type="application/json", response_schema=GEMINI_SCHEMA)
     try:
-
-        response = gemini.models.generate_content(
-            model=model_name,
-            contents=[
-                SYSTEM_PROMPT,
-                prompt,
-                image1,
-                image2
-            ],
-            config=config
-        )
-
+        response = gemini.models.generate_content(model=model_name, contents=[SYSTEM_PROMPT, prompt, image1, image2], config=config)
     except TypeError:
-
-        # SDK compatibility fallback.
-        response = gemini.models.generate_content(
-            model=model_name,
-            contents=[
-                SYSTEM_PROMPT,
-                prompt,
-                image1,
-                image2
-            ],
-            config={
-                "temperature": 0.1,
-                "response_mime_type":
-                    "application/json",
-                "response_schema":
-                    GEMINI_SCHEMA
-            }
-        )
-
-    text = getattr(
-        response,
-        "text",
-        None
-    )
-
+        response = gemini.models.generate_content(model=model_name, contents=[SYSTEM_PROMPT, prompt, image1, image2], config={"temperature": 0.1, "response_mime_type": "application/json", "response_schema": GEMINI_SCHEMA})
+    text = getattr(response, "text", None)
     if not text:
-
-        raise RuntimeError(
-            "Gemini returned empty response."
-        )
-
+        raise RuntimeError("Gemini returned empty response.")
     return text
 
 
-# ============================================================
-# GEMINI RETRY
-# ============================================================
-
-def retryable_gemini_error(
-    exc: Exception
-) -> bool:
-
-    text = str(
-        exc
-    ).lower()
-
-    words = (
-        "429",
-        "500",
-        "502",
-        "503",
-        "504",
-        "timeout",
-        "temporarily",
-        "unavailable",
-        "resource exhausted",
-        "rate limit"
-    )
-
-    return any(
-        word in text
-        for word in words
-    )
+def retryable_gemini_error(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return any(word in text for word in ("429", "500", "502", "503", "504", "timeout", "temporarily", "unavailable", "resource exhausted", "rate limit"))
 
 
-def analyze_two_charts(
-    zone_image: bytes,
-    confirmation_image: bytes
-) -> Dict[str, Any]:
-
-    models = []
-
-    if GEMINI_MODEL:
-
-        models.append(
-            GEMINI_MODEL
-        )
-
-    if (
-        GEMINI_FALLBACK_MODEL
-        and GEMINI_FALLBACK_MODEL
-        not in models
-    ):
-
-        models.append(
-            GEMINI_FALLBACK_MODEL
-        )
-
+def analyze_two_charts(zone_image: bytes, confirmation_image: bytes) -> Dict[str, Any]:
+    models = [m for m in (GEMINI_MODEL, GEMINI_FALLBACK_MODEL) if m]
+    models = list(dict.fromkeys(models))
     last_error = None
-
     for model_name in models:
-
-        for attempt in range(
-            1,
-            GEMINI_RETRIES + 1
-        ):
-
+        for attempt in range(1, GEMINI_RETRIES + 1):
             try:
-
-                logger.info(
-                    f"Gemini model={model_name} "
-                    f"attempt={attempt}/{GEMINI_RETRIES}"
-                )
-
-                raw = call_gemini_model(
-                    model_name,
-                    zone_image,
-                    confirmation_image
-                )
-
-                parsed_json = clean_json(
-                    raw
-                )
-
-                parsed = json.loads(
-                    parsed_json
-                )
-
-                normalized = normalize_result(
-                    parsed
-                )
-
-                final_result = run_final_engine(
-                    normalized
-                )
-
-                return final_result
-
+                logger.info(f"Gemini model={model_name} attempt={attempt}/{GEMINI_RETRIES}")
+                raw = call_gemini_model(model_name, zone_image, confirmation_image)
+                parsed = json.loads(clean_json(raw))
+                return run_final_engine(normalize_result(parsed))
             except Exception as exc:
-
                 last_error = exc
-
-                logger.exception(
-                    "Gemini analysis failed."
-                )
-
-                if (
-                    attempt < GEMINI_RETRIES
-                    and retryable_gemini_error(
-                        exc
-                    )
-                ):
-
-                    time.sleep(
-                        GEMINI_RETRY_DELAY
-                        * attempt
-                    )
-
+                logger.exception("Gemini analysis failed.")
+                if attempt < GEMINI_RETRIES and retryable_gemini_error(exc):
+                    time.sleep(GEMINI_RETRY_DELAY * attempt)
                     continue
-
                 break
-
-    raise RuntimeError(
-        f"Gemini analysis failed: {last_error}"
-    )
+    raise RuntimeError(f"Gemini analysis failed: {last_error}")
 
 
 # ============================================================
-# TELEGRAM PHOTO
+# TELEGRAM OUTPUT
 # ============================================================
 
-def download_telegram_photo(
-    message: Dict[str, Any]
-) -> Optional[bytes]:
-
-    photos = message.get(
-        "photo"
-    )
-
+def download_telegram_photo(message: Dict[str, Any]) -> Optional[bytes]:
+    photos = message.get("photo")
     if not photos:
-
         return None
-
-    largest = photos[-1]
-
-    file_id = largest.get(
-        "file_id"
-    )
-
+    file_id = photos[-1].get("file_id")
     if not file_id:
-
         return None
-
-    file_info = telegram.get_file(
-        file_id
-    )
-
-    file_path = file_info.get(
-        "file_path"
-    )
-
-    if not file_path:
-
-        raise RuntimeError(
-            "Telegram file_path missing."
-        )
-
-    return telegram.download_file(
-        file_path
-    )
+    info = telegram.get_file(file_id)
+    path = info.get("file_path")
+    if not path:
+        raise RuntimeError("Telegram file_path missing.")
+    return telegram.download_file(path)
 
 
-# ============================================================
-# FORMAT CHECKS
-# ============================================================
-
-def format_checks(
-    data: Dict[str, Any]
-) -> str:
-
-    signal = normalize_side(
-        data.get(
-            "signal"
-        )
-    )
-
-    if signal not in (
-        "BUY",
-        "SELL"
-    ):
-
-        direction = determine_direction(
-            data
-        )
-
-        if direction in (
-            "BUY",
-            "SELL"
-        ):
-
-            signal = direction
-
-    if signal not in (
-        "BUY",
-        "SELL"
-    ):
-
-        return (
-            "❌ Strong validation path نییە."
-        )
-
-    checks = validation_checks(
-        data,
-        signal
-    )
-
-    names = [
-        (
-            "SNRZ Structure",
-            checks["structure"]
-        ),
-        (
-            "Zone",
-            checks["zone"]
-        ),
-        (
-            "Price at Zone",
-            checks["price_at_zone"]
-        ),
-        (
-            "Pullback / Retest",
-            checks["pullback"]
-        ),
-        (
-            "Confirmation",
-            checks["confirmation"]
-        ),
-        (
-            "HTF / LTF",
-            checks["htf_ltf"]
-        ),
-        (
-            "Entry / SL / TP",
-            checks["levels"]
-        ),
-        (
-            "RR >= 1:2",
-            checks["rr"]
-        ),
-        (
-            "No Rejection",
-            checks["no_rejection"]
-        )
-    ]
-
-    return "\n".join(
-        f"{'✅' if value else '❌'} {name}"
-        for name, value in names
-    )
+def format_checks(data: Dict[str, Any]) -> str:
+    signal_side = normalize_side(data.get("signal"))
+    if signal_side not in {"BUY", "SELL"}:
+        signal_side = determine_direction(data)
+    if signal_side not in {"BUY", "SELL"}:
+        return "❌ Strong validation path نییە."
+    checks = validation_checks(data, signal_side)
+    names = [("SNRZ Structure", "structure"), ("Zone", "zone"), ("Price at Zone", "price_at_zone"), ("Pullback / Retest", "pullback"), ("Confirmation", "confirmation"), ("HTF / LTF", "htf_ltf"), ("Entry / SL / TP", "levels"), ("RR >= 1:2", "rr"), ("No Rejection", "no_rejection")]
+    return "\n".join(f"{'✅' if checks[key] else '❌'} {name}" for name, key in names)
 
 
-# ============================================================
-# FORMAT SIGNAL
-# ============================================================
-
-def format_signal(
-    data: Dict[str, Any]
-) -> str:
-
-    signal = normalize_side(
-        data.get(
-            "signal"
-        )
-    )
-
-    if signal == "BUY":
-
-        title = "🟢 STRONG BUY SIGNAL"
-
-    elif signal == "SELL":
-
-        title = "🔴 STRONG SELL SIGNAL"
-
-    else:
-
-        title = "🟡 WAIT"
-
-    score = safe_float(
-        data.get(
-            "score"
-        )
-    )
-
-    confidence = safe_float(
-        data.get(
-            "confidence"
-        )
-    )
-
-    score_text = (
-        f"{score:.0f}/100"
-        if score is not None
-        else "0/100"
-    )
-
-    confidence_text = (
-        f"{confidence:.0f}%"
-        if confidence is not None
-        else "0%"
-    )
-
-    zone = zone_from_data(
-        data
-    )
-
-    if zone:
-
-        zone_price = (
-            f"{zone[0]:.2f} - {zone[1]:.2f}"
-        )
-
-    else:
-
-        zone_price = clean_text(
-            data.get(
-                "zone_price"
-            ),
-            "N/A"
-        )
-
-    text = f"""
-{title}
+def format_signal(data: Dict[str, Any]) -> str:
+    signal_side = normalize_side(data.get("signal"))
+    title = "🟢 STRONG BUY SIGNAL" if signal_side == "BUY" else "🔴 STRONG SELL SIGNAL" if signal_side == "SELL" else "🟡 WAIT"
+    score = safe_float(data.get("score"))
+    confidence = safe_float(data.get("confidence"))
+    zone = zone_from_data(data)
+    zone_price = f"{zone[0]:.2f} - {zone[1]:.2f}" if zone else clean_text(data.get("zone_price"), "N/A")
+    score_text = f"{score:.0f}/100" if score is not None else "0/100"
+    confidence_text = f"{confidence:.0f}%" if confidence is not None else "0%"
+    text = f'''{title}
 ━━━━━━━━━━━━━━━━━━
 
 🥇 XAUUSD
@@ -4202,33 +983,23 @@ def format_signal(
 ━━━━━━━━━━━━━━━━━━
 
 🟢 VS:
-{clean_text(data.get("vs_detected"), "N/A")}
+{clean_text(data.get("vs_detected"), "نادیارە")}
 
 🔴 VR:
-{clean_text(data.get("vr_detected"), "N/A")}
+{clean_text(data.get("vr_detected"), "نادیارە")}
 
 🔎 Confirmation:
-{clean_text(data.get("confirmation"), "N/A")}
+{clean_text(data.get("confirmation"), "NONE")}
 
 📊 HTF:
 {clean_text(data.get("htf_direction"), "UNKNOWN")}
 
 📊 LTF:
 {clean_text(data.get("ltf_direction"), "UNKNOWN")}
-""".strip()
-
-    # --------------------------------------------------------
-    # Strong Signal
-    # --------------------------------------------------------
-
-    if signal in (
-        "BUY",
-        "SELL"
-    ):
-
-        text += f"""
-
-━━━━━━━━━━━━━━━━━━
+'''
+    text = text.strip()
+    if signal_side in {"BUY", "SELL"}:
+        text += f'''\n\n━━━━━━━━━━━━━━━━━━
 
 🎯 Entry:
 {clean_text(data.get("entry"), "N/A")}
@@ -4247,819 +1018,227 @@ def format_signal(
 
 📊 R:R:
 {clean_text(data.get("rr"), "N/A")}
-"""
-
-    # --------------------------------------------------------
-    # Analysis
-    # --------------------------------------------------------
-
-    text += f"""
-
-━━━━━━━━━━━━━━━━━━
+'''
+    text += f'''\n━━━━━━━━━━━━━━━━━━
 
 🔎 هۆکاری شیکردنەوە:
 
-{clean_text(data.get("reasoning"), "N/A")}
+{clean_text(data.get("reasoning"), "هیچ بەڵگەی تەواو نییە.")}
 
 ━━━━━━━━━━━━━━━━━━
 
 ✅ Final Checks:
 
-{format_checks(data)}
-"""
-
-    # --------------------------------------------------------
-    # WAIT
-    # --------------------------------------------------------
-
-    if signal == "WAIT":
-
-        rejection = clean_text(
-            data.get(
-                "rejection_reason"
-            ),
-            "هەموو مەرجەکانی Strong Signal تەواو نەبوون."
-        )
-
-        wait_for = clean_text(
-            data.get(
-                "wait_for"
-            ),
-            "چاوەڕێی setup ـێکی تەواو بکە."
-        )
-
-        text += f"""
-
-━━━━━━━━━━━━━━━━━━
+{format_checks(data)}'''
+    if signal_side == "WAIT":
+        text += f'''\n\n━━━━━━━━━━━━━━━━━━
 
 🚫 هۆکاری WAIT:
 
-{rejection}
+{clean_text(data.get("rejection_reason"), "هەموو مەرجەکانی Strong Signal تەواو نەبوون.")}
 
 ━━━━━━━━━━━━━━━━━━
 
 👀 چاوەڕێی چی بکەین؟
 
-{wait_for}
+{clean_text(data.get("wait_for"), "چاوەڕێی setup ـێکی تەواو بکە.")}
 
 ━━━━━━━━━━━━━━━━━━
 
 ⚠️ هیچ Entry ـێک تا تەواوبوونی
-هەموو مەرجە سەرەکییەکان نابێت.
-"""
-
+هەموو مەرجە سەرەکییەکان نابێت.'''
     else:
-
-        text += """
-
-━━━━━━━━━━━━━━━━━━
-
-🔥 STRONG SNRZ SETUP
-
-هەموو مەرجە سەرەکییەکانی
-SNRZ validation تێپەڕێنراون.
-
-⚠️ ئەمە شیکردنەوەی تەکنیکییە؛
-دڵنیایی بە قازانج نادات.
-"""
-
+        text += "\n\n━━━━━━━━━━━━━━━━━━\n\n🔥 STRONG SNRZ SETUP\n\nهەموو مەرجە سەرەکییەکانی SNRZ validation تێپەڕێنراون.\n\n⚠️ ئەمە شیکردنەوەی تەکنیکییە؛ دڵنیایی بە قازانج نادات."
     return text.strip()
 
 
-# ============================================================
-# START / HELP
-# ============================================================
-
-START_MESSAGE = """
-🥇 Gold Chart Analyzer PRO V7
+START_MESSAGE = """🥇 Gold Chart Analyzer PRO V7
 
 🧠 SNRZ Structure Engine
-
 ━━━━━━━━━━━━━━━━━━
 
-سیستەم:
+VS / VR → Zone → Pullback / Retest → M1/M5 Confirmation → HTF/LTF Agreement → RR → BUY / SELL / WAIT
 
-VS / VR
-↓
-Zone
-↓
-Pullback / Retest
-↓
-M1/M5 Confirmation
-↓
-HTF/LTF Agreement
-↓
-RR Validation
-↓
-BUY / SELL / WAIT
+📸 هەنگاوی 1: H1 یان H4 ـی XAUUSD بنێرە.
+📸 هەنگاوی 2: M1 یان M5 بنێرە.
 
-━━━━━━━━━━━━━━━━━━
-
-📸 هەنگاوی 1:
-H1 یان H4 ـی XAUUSD بنێرە.
-
-📸 هەنگاوی 2:
-M1 یان M5 بنێرە.
-
-ئەگەر مەرجەکان تەواو نەبن:
-
-🟡 WAIT
-
-بۆتەکە دەڵێت:
-
-❌ بۆچی WAIT ـە
-📍 Zone Price
-👀 چاوەڕێی چی بکەیت
-
-━━━━━━━━━━━━━━━━━━
+ئەگەر مەرجەکان تەواو نەبن: 🟡 WAIT
 
 /reset
-/help
-""".strip()
+/help"""
 
-
-HELP_MESSAGE = """
-📚 Gold Chart Analyzer PRO V7
-
-━━━━━━━━━━━━━━━━━━
-🧠 SNRZ
+HELP_MESSAGE = """📚 Gold Chart Analyzer PRO V7
 ━━━━━━━━━━━━━━━━━━
 
 🟢 VS:
-
-Support
-→ Up
-→ NEW Resistance
-→ Up
-→ Break same NEW Resistance
+Support → Up → NEW Resistance → Up Again → Break SAME NEW Resistance
 
 🔴 VR:
+Resistance → Down → NEW Support → Down Again → Break SAME NEW Support
 
-Resistance
-→ Down
-→ NEW Support
-→ Down
-→ Break same NEW Support
+🟦 Zone:
+Formation candle + immediately previous candle → shorter BODY wins → full HIGH-to-LOW
 
-━━━━━━━━━━━━━━━━━━
-🟦 ZONE
-━━━━━━━━━━━━━━━━━━
+🔄 Sequence:
+VS/VR → Zone → Retest → Confirmation → Entry
 
-Formation candle
-+
-Immediately previous candle
+🟢 BUY: RBS / SRR / I.VR / PO2
+🔴 SELL: SBR / RSS / I.VS / PO2
 
-→ Compare BODY
-→ Shorter BODY wins
-→ Full HIGH-to-LOW = Zone
+🔥 STRONG: Score >= 80, Confidence >= 80%, RR >= 1:2
 
-━━━━━━━━━━━━━━━━━━
-🔄 SEQUENCE
-━━━━━━━━━━━━━━━━━━
+Otherwise: 🟡 WAIT
 
-VS/VR
-→ Zone
-→ Retest
-→ Confirmation
-→ Entry
-
-Confirmation BEFORE Retest:
-❌ INVALID
-
-━━━━━━━━━━━━━━━━━━
-🟢 BUY
-━━━━━━━━━━━━━━━━━━
-
-RBS
-SRR
-I.VR
-PO2
-
-━━━━━━━━━━━━━━━━━━
-🔴 SELL
-━━━━━━━━━━━━━━━━━━
-
-SBR
-RSS
-I.VS
-PO2
-
-━━━━━━━━━━━━━━━━━━
-🔥 STRONG
-━━━━━━━━━━━━━━━━━━
-
-Score >= 80
-Confidence >= 80%
-RR >= 1:2
-
-Valid:
-VS/VR
-Zone
-Price at Zone
-Pullback
-Confirmation
-HTF/LTF
-Entry/SL/TP
-No rejection
-
-Otherwise:
-
-🟡 WAIT
-
-━━━━━━━━━━━━━━━━━━
-
-/reset
-""".strip()
+/reset"""
 
 
 # ============================================================
-# MESSAGE HANDLER
+# MESSAGE / UPDATE HANDLERS
 # ============================================================
 
-def handle_message(
-    message: Dict[str, Any]
-):
-
-    chat_id = (
-        message.get(
-            "chat",
-            {}
-        ).get(
-            "id"
-        )
-    )
-
+def handle_message(message: Dict[str, Any]):
+    chat_id = message.get("chat", {}).get("id")
     if not chat_id:
-
         return
+    user_id = message.get("from", {}).get("id")
+    text = clean_text(message.get("text"), "").strip()
 
-    user_id = (
-        message.get(
-            "from",
-            {}
-        ).get(
-            "id"
-        )
-    )
-
-    text = clean_text(
-        message.get(
-            "text"
-        ),
-        ""
-    ).strip()
-
-    # --------------------------------------------------------
-    # Admin
-    # --------------------------------------------------------
-
-    if is_admin(
-        user_id
-    ):
-
-        if handle_admin_command(
-            message,
-            chat_id,
-            text
-        ):
-
-            return
-
-    # --------------------------------------------------------
-    # Access
-    # --------------------------------------------------------
-
-    if not is_allowed(
-        user_id
-    ):
-
+    if is_admin(user_id) and handle_admin_command(message, chat_id, text):
+        return
+    if not is_allowed(user_id):
         if text == "/start":
-
-            send_access_request(
-                message,
-                chat_id,
-                user_id
-            )
-
-            return
-
-        deny_access(
-            chat_id
-        )
-
+            send_access_request(message, chat_id, user_id)
+        else:
+            deny_access(chat_id)
         return
-
-    # --------------------------------------------------------
-    # START
-    # --------------------------------------------------------
-
     if text == "/start":
-
-        reset_session(
-            chat_id
-        )
-
-        get_session(
-            chat_id
-        )
-
-        telegram.send_message(
-            chat_id,
-            START_MESSAGE
-        )
-
+        reset_session(chat_id)
+        get_session(chat_id)
+        telegram.send_message(chat_id, START_MESSAGE)
         return
-
-    # --------------------------------------------------------
-    # HELP
-    # --------------------------------------------------------
-
     if text == "/help":
-
-        telegram.send_message(
-            chat_id,
-            HELP_MESSAGE
-        )
-
+        telegram.send_message(chat_id, HELP_MESSAGE)
         return
-
-    # --------------------------------------------------------
-    # RESET
-    # --------------------------------------------------------
-
     if text == "/reset":
-
-        reset_session(
-            chat_id
-        )
-
-        telegram.send_message(
-            chat_id,
-            """
-♻️ Session reset کرا.
-
-📸 ئێستا H1 یان H4 ـی XAUUSD بنێرە.
-""".strip()
-        )
-
+        reset_session(chat_id)
+        telegram.send_message(chat_id, "♻️ Session reset کرا.\n\n📸 ئێستا H1 یان H4 ـی XAUUSD بنێرە.")
         return
 
-    # --------------------------------------------------------
-    # PHOTO
-    # --------------------------------------------------------
-
-    photo = download_telegram_photo(
-        message
-    )
-
+    photo = download_telegram_photo(message)
     if photo is not None:
-
-        session = get_session(
-            chat_id
-        )
-
-        # ----------------------------------------------------
-        # FIRST PHOTO
-        # ----------------------------------------------------
-
-        if session.get(
-            "zone_image"
-        ) is None:
-
-            session[
-                "zone_image"
-            ] = photo
-
-            telegram.send_message(
-                chat_id,
-                """
-✅ H1/H4 وەرگیرا.
-
-🧠 ئێستا HTF ـەکە شیکردنەوە دەکرێت:
-
-VS / VR
-↓
-Zone
-
-━━━━━━━━━━━━━━━━━━
-
-📸 ئێستا M1 یان M5 بنێرە
-بۆ Pullback / Retest + Confirmation.
-""".strip()
-            )
-
+        session = get_session(chat_id)
+        if session.get("zone_image") is None:
+            session["zone_image"] = photo
+            telegram.send_message(chat_id, "✅ H1/H4 وەرگیرا.\n\n🧠 HTF: VS / VR → Zone\n\n📸 ئێستا M1 یان M5 بنێرە بۆ Retest + Confirmation.")
             return
-
-        # ----------------------------------------------------
-        # SECOND PHOTO
-        # ----------------------------------------------------
-
-        if session.get(
-            "confirmation_image"
-        ) is None:
-
-            session[
-                "confirmation_image"
-            ] = photo
-
-            telegram.send_message(
-                chat_id,
-                """
-⏳ هەردوو chart وەرگیرا.
-
-🧠 V7 Engine:
-
-VS/VR
-→ Zone
-→ Retest
-→ Confirmation
-→ HTF/LTF
-→ RR
-→ Final Validation
-
-⏳ تکایە چاوەڕێ بکە...
-""".strip()
-            )
-
+        if session.get("confirmation_image") is None:
+            session["confirmation_image"] = photo
+            telegram.send_message(chat_id, "⏳ هەردوو chart وەرگیرا.\n\n🧠 V7 Engine: VS/VR → Zone → Retest → Confirmation → HTF/LTF → RR → Final Validation\n\n⏳ تکایە چاوەڕێ بکە...")
             try:
-
-                result = analyze_two_charts(
-                    session[
-                        "zone_image"
-                    ],
-                    session[
-                        "confirmation_image"
-                    ]
-                )
-
-                response_text = format_signal(
-                    result
-                )
-
-                telegram.send_message(
-                    chat_id,
-                    response_text
-                )
-
+                result = analyze_two_charts(session["zone_image"], session["confirmation_image"])
+                telegram.send_message(chat_id, format_signal(result))
             except Exception as exc:
-
-                logger.exception(
-                    "Analysis failed."
-                )
-
-                telegram.send_message(
-                    chat_id,
-                    f"""
-❌ شیکردنەوەکە نەکرا.
-
-هۆکار:
-{exc}
-
-تکایە:
-
-/reset
-
-پاشان chart ـەکان دووبارە بنێرە.
-""".strip()
-                )
-
+                logger.exception("Analysis failed.")
+                telegram.send_message(chat_id, f"❌ شیکردنەوەکە نەکرا.\n\nهۆکار:\n{exc}\n\n/reset")
             finally:
-
-                reset_session(
-                    chat_id
-                )
-
+                reset_session(chat_id)
             return
 
-    # --------------------------------------------------------
-    # OTHER TEXT
-    # --------------------------------------------------------
-
-    telegram.send_message(
-        chat_id,
-        """
-تکایە chart بنێرە:
-
-1️⃣ H1 یان H4
-2️⃣ M1 یان M5
-
-یان:
-
-/help
-/reset
-""".strip()
-    )
+    telegram.send_message(chat_id, "تکایە chart بنێرە:\n\n1️⃣ H1 یان H4\n2️⃣ M1 یان M5\n\nیان /help /reset")
 
 
-# ============================================================
-# UPDATE HANDLER
-# ============================================================
-
-def handle_update(
-    update: Dict[str, Any]
-):
-
-    callback_query = update.get(
-        "callback_query"
-    )
-
+def handle_update(update: Dict[str, Any]):
+    callback_query = update.get("callback_query")
     if callback_query:
-
         try:
-
-            handle_access_callback(
-                callback_query
-            )
-
+            handle_access_callback(callback_query)
         except Exception:
-
-            logger.exception(
-                "Callback handling error."
-            )
-
+            logger.exception("Callback handling error.")
         return
-
-    message = update.get(
-        "message"
-    )
-
+    message = update.get("message")
     if not message:
-
         return
-
     try:
-
-        handle_message(
-            message
-        )
-
+        handle_message(message)
     except TelegramAPIError:
-
-        logger.exception(
-            "Telegram API error."
-        )
-
+        logger.exception("Telegram API error.")
     except Exception:
+        logger.exception("Message handling error.")
 
-        logger.exception(
-            "Message handling error."
-        )
-
-
-# ============================================================
-# TELEGRAM INITIALIZATION
-# ============================================================
 
 def initialize_telegram():
-
-    logger.info(
-        "Connecting to Telegram..."
-    )
-
+    logger.info("Connecting to Telegram...")
     me = telegram.get_me()
+    logger.info(f"Telegram connected: @{me.get('username', 'unknown')}")
+    telegram.delete_webhook(drop_pending_updates=False)
+    logger.info("Webhook removed. Long polling ready.")
 
-    logger.info(
-        f"Telegram connected: "
-        f"@{me.get('username', 'unknown')}"
-    )
-
-    telegram.delete_webhook(
-        drop_pending_updates=False
-    )
-
-    logger.info(
-        "Webhook removed. Long polling ready."
-    )
-
-
-# ============================================================
-# SIGNAL HANDLERS
-# ============================================================
 
 RUNNING = True
 
 
-def stop_bot(
-    signum,
-    frame
-):
-
+def stop_bot(signum, frame):
     global RUNNING
-
-    logger.info(
-        f"Shutdown signal received: {signum}"
-    )
-
+    logger.info(f"Shutdown signal received: {signum}")
     RUNNING = False
 
 
-signal.signal(
-    signal.SIGINT,
-    stop_bot
-)
+signal.signal(signal.SIGINT, stop_bot)
+signal.signal(signal.SIGTERM, stop_bot)
 
-signal.signal(
-    signal.SIGTERM,
-    stop_bot
-)
-
-
-# ============================================================
-# MAIN RUN
-# ============================================================
 
 def run():
-
-    logger.info(
-        "=================================================="
-    )
-
-    logger.info(
-        "Gold Chart Analyzer PRO V7 starting..."
-    )
-
-    logger.info(
-        f"Gemini model: {GEMINI_MODEL}"
-    )
-
-    logger.info(
-        f"Gemini fallback: {GEMINI_FALLBACK_MODEL}"
-    )
-
-    logger.info(
-        f"Admin ID: {ADMIN_USER_ID}"
-    )
-
-    logger.info(
-        f"Allowed users: {len(ALLOWED_USER_IDS)}"
-    )
-
-    logger.info(
-        f"Minimum score: {MIN_STRONG_SCORE}"
-    )
-
-    logger.info(
-        f"Minimum confidence: {MIN_STRONG_CONFIDENCE}%"
-    )
-
-    logger.info(
-        f"Minimum RR: 1:{MIN_RR}"
-    )
-
-    logger.info(
-        "=================================================="
-    )
-
-    # --------------------------------------------------------
-    # Initialize Telegram
-    # --------------------------------------------------------
+    logger.info("==================================================")
+    logger.info("Gold Chart Analyzer PRO V7 starting...")
+    logger.info(f"Gemini model: {GEMINI_MODEL}")
+    logger.info(f"Gemini fallback: {GEMINI_FALLBACK_MODEL}")
+    logger.info(f"Admin ID: {ADMIN_USER_ID}")
+    logger.info(f"Allowed users: {len(ALLOWED_USER_IDS)}")
+    logger.info(f"Minimum score: {MIN_STRONG_SCORE}")
+    logger.info(f"Minimum confidence: {MIN_STRONG_CONFIDENCE}%")
+    logger.info(f"Minimum RR: 1:{MIN_RR}")
+    logger.info("==================================================")
 
     while RUNNING:
-
         try:
-
             initialize_telegram()
-
             break
-
         except TelegramAPIError as exc:
-
-            logger.error(
-                f"Telegram initialization failed: {exc}"
-            )
-
-            time.sleep(
-                TELEGRAM_RETRY_DELAY
-            )
-
+            logger.error(f"Telegram initialization failed: {exc}")
+            time.sleep(TELEGRAM_RETRY_DELAY)
         except Exception:
-
-            logger.exception(
-                "Initialization error."
-            )
-
-            time.sleep(
-                TELEGRAM_RETRY_DELAY
-            )
-
-    # --------------------------------------------------------
-    # Long polling
-    # --------------------------------------------------------
+            logger.exception("Initialization error.")
+            time.sleep(TELEGRAM_RETRY_DELAY)
 
     offset = None
-
     while RUNNING:
-
         try:
-
             cleanup_sessions()
-
-            updates = telegram.get_updates(
-                offset=offset,
-                timeout=TELEGRAM_POLL_TIMEOUT
-            )
-
+            updates = telegram.get_updates(offset=offset, timeout=TELEGRAM_POLL_TIMEOUT)
             if not updates:
-
                 continue
-
             for update in updates:
-
                 if not RUNNING:
-
                     break
-
-                update_id = update.get(
-                    "update_id"
-                )
-
+                update_id = update.get("update_id")
                 if update_id is not None:
-
-                    offset = (
-                        update_id + 1
-                    )
-
-                handle_update(
-                    update
-                )
-
+                    offset = update_id + 1
+                handle_update(update)
         except TelegramAPIError as exc:
-
-            text = str(
-                exc
-            ).lower()
-
-            # ------------------------------------------------
-            # 409 Conflict
-            # ------------------------------------------------
-
-            if (
-                exc.status_code == 409
-                or "409" in text
-                or "conflict" in text
-            ):
-
-                logger.error(
-                    "=================================================="
-                )
-
-                logger.error(
-                    "TELEGRAM 409 CONFLICT"
-                )
-
-                logger.error(
-                    "Another process is polling this bot token."
-                )
-
-                logger.error(
-                    "Only ONE running instance is allowed."
-                )
-
-                logger.error(
-                    "Waiting 10 seconds..."
-                )
-
-                logger.error(
-                    "=================================================="
-                )
-
-                time.sleep(
-                    10
-                )
-
+            text = str(exc).lower()
+            if exc.status_code == 409 or "409" in text or "conflict" in text:
+                logger.error("TELEGRAM 409 CONFLICT: another process is polling this bot token. Only ONE instance is allowed.")
+                time.sleep(10)
             else:
-
-                logger.exception(
-                    "Telegram polling error."
-                )
-
-                time.sleep(
-                    TELEGRAM_RETRY_DELAY
-                )
-
+                logger.exception("Telegram polling error.")
+                time.sleep(TELEGRAM_RETRY_DELAY)
         except KeyboardInterrupt:
-
             break
-
         except Exception:
+            logger.exception("Unexpected polling error.")
+            time.sleep(TELEGRAM_RETRY_DELAY)
+    logger.info("Gold Chart Analyzer PRO V7 stopped.")
 
-            logger.exception(
-                "Unexpected polling error."
-            )
-
-            time.sleep(
-                TELEGRAM_RETRY_DELAY
-            )
-
-    logger.info(
-        "Gold Chart Analyzer PRO V7 stopped."
-    )
-
-
-# ============================================================
-# ENTRY POINT
-# ============================================================
 
 if __name__ == "__main__":
-
     run()
