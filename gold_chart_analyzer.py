@@ -2497,160 +2497,221 @@ def structure_steps_valid(
     direction: str
 ) -> bool:
 
-    if not data.get(
-        "structure_valid"
-    ):
+    # --------------------------------------------------------
+    # BASIC CHECKS
+    # --------------------------------------------------------
 
+    if data.get("structure_valid") is not True:
         return False
 
     if normalize_structure(
-        data.get(
-            "structure_direction"
-        )
+        data.get("structure_direction")
     ) != direction:
-
         return False
 
     steps = [
         clean_text(
-            data.get(
-                f"structure_step_{i}"
-            ),
+            data.get(f"structure_step_{i}"),
             ""
-        ).upper()
-        for i in range(
-            1,
-            6
-        )
+        ).strip().upper()
+        for i in range(1, 6)
     ]
 
-    if any(
-        not step
-        for step in steps
-    ):
-
+    # All 5 steps must exist.
+    if any(not step for step in steps):
         return False
+
+    # --------------------------------------------------------
+    # VS
+    #
+    # SUPPORT
+    #   ↓
+    # UP
+    #   ↓
+    # NEW RESISTANCE AFTER SUPPORT
+    #   ↓
+    # UP AGAIN
+    #   ↓
+    # BREAK OF SAME NEW RESISTANCE
+    # --------------------------------------------------------
 
     if direction == "VS":
 
-        required = [
-            (
-                "SUPPORT",
-                "S"
-            ),
-            (
-                "UP",
-                "U"
-            ),
-            (
-                "RESISTANCE",
-                "R"
-            ),
-            (
-                "UP",
-                "U"
-            ),
-            (
-                "BREAK",
-                "B"
-            )
-        ]
-
-        # Exact semantic checks.
+        # STEP 1 = SUPPORT
         if "SUPPORT" not in steps[0]:
-
             return False
 
+        # STEP 2 = UP
         if (
             "UP" not in steps[1]
             and "BULL" not in steps[1]
         ):
-
             return False
 
+        # STEP 3 = NEW RESISTANCE
         if "RESISTANCE" not in steps[2]:
-
             return False
 
+        # It MUST be NEW.
+        if "NEW" not in steps[2]:
+            return False
+
+        # It MUST be created AFTER support.
+        if (
+            "AFTER" not in steps[2]
+            and "POST" not in steps[2]
+        ):
+            return False
+
+        # Reject explicit contradiction.
+        forbidden_step3 = (
+            "BEFORE SUPPORT",
+            "EXISTED BEFORE",
+            "EXISTING BEFORE",
+            "OLD RESISTANCE",
+            "PREVIOUS RESISTANCE",
+            "RESISTANCE BEFORE SUPPORT"
+        )
+
+        if any(
+            phrase in steps[2]
+            for phrase in forbidden_step3
+        ):
+            return False
+
+        # STEP 4 = UP AGAIN
         if (
             "UP" not in steps[3]
             and "BULL" not in steps[3]
         ):
-
             return False
 
+        # STEP 5 = BREAK SAME NEW RESISTANCE
         if "BREAK" not in steps[4]:
-
             return False
 
         if "RESISTANCE" not in steps[4]:
+            return False
 
+        # Must explicitly refer to SAME resistance.
+        if (
+            "SAME" not in steps[4]
+            and "NEW RESISTANCE" not in steps[4]
+        ):
+            return False
+
+        # Reject a break of an old/different resistance.
+        forbidden_step5 = (
+            "OLD RESISTANCE",
+            "PREVIOUS RESISTANCE",
+            "DIFFERENT RESISTANCE",
+            "ANOTHER RESISTANCE"
+        )
+
+        if any(
+            phrase in steps[4]
+            for phrase in forbidden_step5
+        ):
             return False
 
         return True
 
+    # --------------------------------------------------------
+    # VR
+    #
+    # RESISTANCE
+    #   ↓
+    # DOWN
+    #   ↓
+    # NEW SUPPORT AFTER RESISTANCE
+    #   ↓
+    # DOWN AGAIN
+    #   ↓
+    # BREAK OF SAME NEW SUPPORT
+    # --------------------------------------------------------
+
     if direction == "VR":
 
+        # STEP 1 = RESISTANCE
         if "RESISTANCE" not in steps[0]:
-
             return False
 
+        # STEP 2 = DOWN
         if (
             "DOWN" not in steps[1]
             and "BEAR" not in steps[1]
         ):
-
             return False
 
+        # STEP 3 = NEW SUPPORT
         if "SUPPORT" not in steps[2]:
-
             return False
 
+        # It MUST be NEW.
+        if "NEW" not in steps[2]:
+            return False
+
+        # It MUST be created AFTER resistance.
+        if (
+            "AFTER" not in steps[2]
+            and "POST" not in steps[2]
+        ):
+            return False
+
+        # Reject explicit contradiction.
+        forbidden_step3 = (
+            "BEFORE RESISTANCE",
+            "EXISTED BEFORE",
+            "EXISTING BEFORE",
+            "OLD SUPPORT",
+            "PREVIOUS SUPPORT",
+            "SUPPORT BEFORE RESISTANCE"
+        )
+
+        if any(
+            phrase in steps[2]
+            for phrase in forbidden_step3
+        ):
+            return False
+
+        # STEP 4 = DOWN AGAIN
         if (
             "DOWN" not in steps[3]
             and "BEAR" not in steps[3]
         ):
-
             return False
 
+        # STEP 5 = BREAK SAME NEW SUPPORT
         if "BREAK" not in steps[4]:
-
             return False
 
         if "SUPPORT" not in steps[4]:
+            return False
 
+        # Must explicitly refer to SAME support.
+        if (
+            "SAME" not in steps[4]
+            and "NEW SUPPORT" not in steps[4]
+        ):
+            return False
+
+        # Reject a break of an old/different support.
+        forbidden_step5 = (
+            "OLD SUPPORT",
+            "PREVIOUS SUPPORT",
+            "DIFFERENT SUPPORT",
+            "ANOTHER SUPPORT"
+        )
+
+        if any(
+            phrase in steps[4]
+            for phrase in forbidden_step5
+        ):
             return False
 
         return True
 
     return False
-
-
-def validate_structure(
-    data: Dict[str, Any],
-    signal: str
-) -> bool:
-
-    signal = normalize_side(
-        signal
-    )
-
-    if signal == "BUY":
-
-        return structure_steps_valid(
-            data,
-            "VS"
-        )
-
-    if signal == "SELL":
-
-        return structure_steps_valid(
-            data,
-            "VR"
-        )
-
-    return False
-
 
 # ============================================================
 # STRICT ZONE VALIDATION
