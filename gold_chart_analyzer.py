@@ -412,6 +412,42 @@ VR example:
 If a step is not visually proven, write "NOT PROVEN" for that step and set structure_valid=false.
 
 ============================================================
+NUMERIC STRUCTURE EVIDENCE — MANDATORY
+============================================================
+Do NOT declare VS/VR from labels or text alone. Return numeric visual anchors for every step.
+All prices must come from the visible chart; never invent them.
+
+For VS return:
+- structure_step_1_level = support price
+- structure_step_2_level = price reached by the first UP move
+- structure_step_3_level = NEW resistance price
+- structure_step_4_level = price reached by the second UP move
+- structure_step_5_level = actual break price
+- structure_broken_level = the SAME resistance level that step 5 breaks
+- structure_step_1_order ... structure_step_5_order = approximate left-to-right candle/bar order.
+
+For VR return:
+- structure_step_1_level = resistance price
+- structure_step_2_level = price reached by the first DOWN move
+- structure_step_3_level = NEW support price
+- structure_step_4_level = price reached by the second DOWN move
+- structure_step_5_level = actual break price
+- structure_broken_level = the SAME support level that step 5 breaks
+- structure_step_1_order ... structure_step_5_order = approximate left-to-right candle/bar order.
+
+A VS is NOT valid unless:
+step1 < step2, step2 is before step3 in time, step3 < step4, step4 is before step5 in time,
+and step5 breaks above the SAME step3 resistance. The reported structure_broken_level must be
+very close to step3 resistance (small chart-reading tolerance).
+
+A VR is NOT valid unless:
+step2 < step1, step4 < step3, step5 breaks below the SAME step3 support,
+and structure_broken_level is very close to step3 support.
+
+If ANY numeric anchor or chronological order is missing/uncertain, structure_valid MUST be false
+and structure_direction MUST be NONE.
+
+============================================================
 ZONE
 ============================================================
 After a valid VS/VR:
@@ -456,6 +492,64 @@ Return JSON ONLY. All explanations except canonical SNRZ labels may be Sorani Ku
 '''
 
 
+STRUCTURE_SYSTEM_PROMPT = r'''
+You are a dedicated XAUUSD SNRZ VISUAL STRUCTURE DETECTOR.
+Analyze ONLY IMAGE 1 (H1/H4). Ignore M1/M5, Zone, Confirmation and trade entry.
+Your ONLY job is to decide whether a CLEAR VS or VR structure is visibly present.
+
+VS = exactly this visual sequence from LEFT TO RIGHT:
+1. SUPPORT
+2. PRICE MOVES UP FROM THAT SUPPORT
+3. A NEW RESISTANCE IS FORMED AFTER THAT SUPPORT
+4. PRICE MOVES UP AGAIN
+5. PRICE BREAKS THAT SAME NEW RESISTANCE
+
+VR = exactly this visual sequence from LEFT TO RIGHT:
+1. RESISTANCE
+2. PRICE MOVES DOWN FROM THAT RESISTANCE
+3. A NEW SUPPORT IS FORMED AFTER THAT RESISTANCE
+4. PRICE MOVES DOWN AGAIN
+5. PRICE BREAKS THAT SAME NEW SUPPORT
+
+IMPORTANT:
+- Judge the CANDLE/PRICE ACTION SHAPE in the image, not text labels.
+- Existing/old resistance before the support does NOT make VS.
+- Existing/old support before the resistance does NOT make VR.
+- If the five-step shape is clearly visible, mark it VALID even if exact price digits are hard to read.
+- If the shape is genuinely unclear, mark NONE. Do not reject a clearly visible structure merely because a price label is unreadable.
+- Return the strongest single structure only: VS, VR, or NONE.
+- Give approximate left-to-right order numbers and approximate levels when readable; use 0 if unreadable.
+- Confidence is visual confidence, 0-100.
+Return JSON ONLY.
+'''
+
+STRUCTURE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "direction": {"type": "string"},
+        "valid": {"type": "boolean"},
+        "confidence": {"type": "number"},
+        "step_1": {"type": "string"},
+        "step_2": {"type": "string"},
+        "step_3": {"type": "string"},
+        "step_4": {"type": "string"},
+        "step_5": {"type": "string"},
+        "step_1_level": {"type": "string"},
+        "step_2_level": {"type": "string"},
+        "step_3_level": {"type": "string"},
+        "step_4_level": {"type": "string"},
+        "step_5_level": {"type": "string"},
+        "broken_level": {"type": "string"},
+        "step_1_order": {"type": "number"},
+        "step_2_order": {"type": "number"},
+        "step_3_order": {"type": "number"},
+        "step_4_order": {"type": "number"},
+        "step_5_order": {"type": "number"},
+        "visual_reason": {"type": "string"}
+    },
+    "required": ["direction","valid","confidence","step_1","step_2","step_3","step_4","step_5","step_1_level","step_2_level","step_3_level","step_4_level","step_5_level","broken_level","step_1_order","step_2_order","step_3_order","step_4_order","step_5_order","visual_reason"]
+}
+
 GEMINI_SCHEMA = {
     "type": "object",
     "properties": {
@@ -463,7 +557,14 @@ GEMINI_SCHEMA = {
         "structure_direction": {"type": "string"}, "structure_valid": {"type": "boolean"},
         "structure_step_1": {"type": "string"}, "structure_step_2": {"type": "string"},
         "structure_step_3": {"type": "string"}, "structure_step_4": {"type": "string"},
-        "structure_step_5": {"type": "string"}, "vs_detected": {"type": "string"}, "vr_detected": {"type": "string"},
+        "structure_step_5": {"type": "string"},
+        "structure_step_1_level": {"type": "string"}, "structure_step_2_level": {"type": "string"},
+        "structure_step_3_level": {"type": "string"}, "structure_step_4_level": {"type": "string"},
+        "structure_step_5_level": {"type": "string"}, "structure_broken_level": {"type": "string"},
+        "structure_step_1_order": {"type": "number"}, "structure_step_2_order": {"type": "number"},
+        "structure_step_3_order": {"type": "number"}, "structure_step_4_order": {"type": "number"},
+        "structure_step_5_order": {"type": "number"},
+        "vs_detected": {"type": "string"}, "vr_detected": {"type": "string"},
         "zone_valid": {"type": "boolean"}, "zone_low": {"type": "string"}, "zone_high": {"type": "string"},
         "zone": {"type": "string"}, "zone_price": {"type": "string"}, "zone_candle": {"type": "string"},
         "previous_candle": {"type": "string"}, "selected_candle": {"type": "string"}, "selected_body": {"type": "string"},
@@ -478,7 +579,7 @@ GEMINI_SCHEMA = {
         "score": {"type": "number"}, "confidence": {"type": "number"}
     },
     "required": [
-        "signal","symbol","structure_direction","structure_valid","structure_step_1","structure_step_2","structure_step_3","structure_step_4","structure_step_5","vs_detected","vr_detected","zone_valid","zone_low","zone_high","zone","zone_price","zone_candle","previous_candle","selected_candle","selected_body","price_at_zone","pullback_valid","pullback_evidence","confirmation","confirmation_valid","confirmation_after_retest","confirmation_evidence","htf_direction","ltf_direction","htf_ltf_agreement","entry_valid","sl_valid","tp_valid","entry","sl","tp1","tp2","tp3","rr","setup","trend","reasoning","checks","rejection_present","rejection_reason","wait_for","score","confidence"
+        "signal","symbol","structure_direction","structure_valid","structure_step_1","structure_step_2","structure_step_3","structure_step_4","structure_step_5","structure_step_1_level","structure_step_2_level","structure_step_3_level","structure_step_4_level","structure_step_5_level","structure_broken_level","structure_step_1_order","structure_step_2_order","structure_step_3_order","structure_step_4_order","structure_step_5_order","vs_detected","vr_detected","zone_valid","zone_low","zone_high","zone","zone_price","zone_candle","previous_candle","selected_candle","selected_body","price_at_zone","pullback_valid","pullback_evidence","confirmation","confirmation_valid","confirmation_after_retest","confirmation_evidence","htf_direction","ltf_direction","htf_ltf_agreement","entry_valid","sl_valid","tp_valid","entry","sl","tp1","tp2","tp3","rr","setup","trend","reasoning","checks","rejection_present","rejection_reason","wait_for","score","confidence"
     ]
 }
 
@@ -527,8 +628,20 @@ def normalize_result(data: Dict[str, Any]) -> Dict[str, Any]:
     result["signal"] = normalize_side(result.get("signal"))
     result["symbol"] = "XAUUSD"
     result["structure_direction"] = normalize_structure(result.get("structure_direction"))
+    for key in ["structure_step_1_level","structure_step_2_level","structure_step_3_level","structure_step_4_level","structure_step_5_level","structure_broken_level"]:
+        result[key] = clean_text(result.get(key), "N/A")
+    for key in ["structure_step_1_order","structure_step_2_order","structure_step_3_order","structure_step_4_order","structure_step_5_order"]:
+        result[key] = safe_float(result.get(key))
     for key in ["structure_valid","zone_valid","price_at_zone","pullback_valid","confirmation_valid","confirmation_after_retest","htf_ltf_agreement","entry_valid","sl_valid","tp_valid","rejection_present"]:
         result[key] = parse_bool(result.get(key))
+    # Do not kill a visually confirmed structure only because a screenshot price
+    # label is unreadable. The dedicated visual detector is the primary structure gate.
+    if result["structure_direction"] in {"VS", "VR"} and result.get("structure_valid") is True:
+        orders = [result.get(f"structure_step_{i}_order") for i in range(1, 6)]
+        known_orders = [x for x in orders if x is not None and x > 0]
+        if len(known_orders) >= 3 and any(known_orders[i] >= known_orders[i+1] for i in range(len(known_orders)-1)):
+            result["structure_direction"] = "NONE"
+            result["structure_valid"] = False
     return result
 
 
@@ -584,54 +697,83 @@ def contains_any(text: str, words: Tuple[str, ...]) -> bool:
     return any(word in text for word in words)
 
 
+STRUCTURE_LEVEL_TOLERANCE = 2.0
+
+
+def parse_order(value: Any) -> Optional[float]:
+    return safe_float(value)
+
+
+def structure_numeric_valid(data: Dict[str, Any], direction: str) -> bool:
+    levels = [safe_float(data.get(f"structure_step_{i}_level")) for i in range(1, 6)]
+    orders = [parse_order(data.get(f"structure_step_{i}_order")) for i in range(1, 6)]
+    broken = safe_float(data.get("structure_broken_level"))
+
+    if any(v is None for v in levels) or broken is None:
+        return False
+    if any(v is None for v in orders):
+        return False
+    if any(orders[i] >= orders[i + 1] for i in range(4)):
+        return False
+
+    s1, s2, s3, s4, s5 = levels
+    if direction == "VS":
+        if not (s2 > s1 and s4 > s3 and s5 > s3):
+            return False
+        if abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
+            return False
+        return True
+    if direction == "VR":
+        if not (s2 < s1 and s4 < s3 and s5 < s3):
+            return False
+        if abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
+            return False
+        return True
+    return False
+
+
 def structure_steps_valid(data: Dict[str, Any], direction: str) -> bool:
     if data.get("structure_valid") is not True:
         return False
     if normalize_structure(data.get("structure_direction")) != direction:
         return False
+
     steps = [clean_text(data.get(f"structure_step_{i}"), "").strip().upper() for i in range(1, 6)]
     if any(not step or step == "NOT PROVEN" for step in steps):
         return False
 
+    # Canonical labels are still checked, but they are NOT sufficient by themselves.
     if direction == "VS":
-        if not contains_any(steps[0], VS_SUPPORT):
-            return False
-        if not contains_any(steps[1], VS_UP):
-            return False
-        if not contains_any(steps[2], VS_RESISTANCE) or not contains_any(steps[2], NEW_WORDS) or not contains_any(steps[2], AFTER_WORDS):
-            return False
-        if contains_any(steps[2], ("BEFORE SUPPORT", "EXISTED BEFORE", "OLD RESISTANCE", "PREVIOUS RESISTANCE")):
-            return False
-        if not contains_any(steps[3], VS_UP):
-            return False
-        if not contains_any(steps[4], BREAK_WORDS) or not contains_any(steps[4], VS_RESISTANCE):
-            return False
-        if not contains_any(steps[4], SAME_WORDS) and "NEW RESISTANCE" not in steps[4]:
-            return False
-        if contains_any(steps[4], ("OLD RESISTANCE", "PREVIOUS RESISTANCE", "DIFFERENT RESISTANCE", "ANOTHER RESISTANCE")):
+        required = [
+            (0, ("SUPPORT",)),
+            (1, ("UP",)),
+            (2, ("NEW RESISTANCE",)),
+            (3, ("UP AGAIN",)),
+            (4, ("BREAK SAME NEW RESISTANCE",)),
+        ]
+        for idx, words in required:
+            if not any(word in steps[idx] for word in words):
+                return False
+        if "NEW RESISTANCE AFTER SUPPORT" not in steps[2]:
             return False
         return True
 
     if direction == "VR":
-        if not contains_any(steps[0], VR_RESISTANCE):
-            return False
-        if not contains_any(steps[1], VR_DOWN):
-            return False
-        if not contains_any(steps[2], VR_SUPPORT) or not contains_any(steps[2], NEW_WORDS) or not contains_any(steps[2], AFTER_WORDS):
-            return False
-        if contains_any(steps[2], ("BEFORE RESISTANCE", "EXISTED BEFORE", "OLD SUPPORT", "PREVIOUS SUPPORT")):
-            return False
-        if not contains_any(steps[3], VR_DOWN):
-            return False
-        if not contains_any(steps[4], BREAK_WORDS) or not contains_any(steps[4], VR_SUPPORT):
-            return False
-        if not contains_any(steps[4], SAME_WORDS) and "NEW SUPPORT" not in steps[4]:
-            return False
-        if contains_any(steps[4], ("OLD SUPPORT", "PREVIOUS SUPPORT", "DIFFERENT SUPPORT", "ANOTHER SUPPORT")):
+        required = [
+            (0, ("RESISTANCE",)),
+            (1, ("DOWN",)),
+            (2, ("NEW SUPPORT",)),
+            (3, ("DOWN AGAIN",)),
+            (4, ("BREAK SAME NEW SUPPORT",)),
+        ]
+        for idx, words in required:
+            if not any(word in steps[idx] for word in words):
+                return False
+        if "NEW SUPPORT AFTER RESISTANCE" not in steps[2]:
             return False
         return True
-    return False
 
+    return False
 
 def validate_structure(data: Dict[str, Any], signal_side: str) -> bool:
     expected = "VS" if signal_side == "BUY" else "VR" if signal_side == "SELL" else "NONE"
@@ -859,6 +1001,50 @@ def make_image_part(image_bytes: bytes, mime_type: str = "image/jpeg"):
     return types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
 
+def call_structure_detector(model_name: str, zone_image: bytes) -> Dict[str, Any]:
+    config = types.GenerateContentConfig(temperature=0.0, response_mime_type="application/json", response_schema=STRUCTURE_SCHEMA)
+    image1 = make_image_part(zone_image)
+    try:
+        response = gemini.models.generate_content(model=model_name, contents=[STRUCTURE_SYSTEM_PROMPT, image1], config=config)
+    except TypeError:
+        response = gemini.models.generate_content(model=model_name, contents=[STRUCTURE_SYSTEM_PROMPT, image1], config={"temperature": 0.0, "response_mime_type": "application/json", "response_schema": STRUCTURE_SCHEMA})
+    text = getattr(response, "text", None)
+    if not text:
+        raise RuntimeError("Structure detector returned empty response.")
+    obj = json.loads(clean_json(text))
+    return obj if isinstance(obj, dict) else {}
+
+
+def apply_structure_detector(data: Dict[str, Any], structure: Dict[str, Any]) -> Dict[str, Any]:
+    direction = normalize_structure(structure.get("direction"))
+    valid = parse_bool(structure.get("valid"))
+    confidence = safe_float(structure.get("confidence")) or 0.0
+    steps = [clean_text(structure.get(f"step_{i}"), "NOT PROVEN") for i in range(1, 6)]
+    # Specialist is intentionally authoritative for VS/VR. The full analyzer cannot
+    # overwrite a clear structure decision with NONE.
+    if direction in {"VS", "VR"} and valid and confidence >= 60 and all(s.upper() != "NOT PROVEN" for s in steps):
+        data["structure_direction"] = direction
+        data["structure_valid"] = True
+        for i in range(1, 6):
+            data[f"structure_step_{i}"] = steps[i-1]
+            data[f"structure_step_{i}_level"] = clean_text(structure.get(f"step_{i}_level"), "N/A")
+            data[f"structure_step_{i}_order"] = safe_float(structure.get(f"step_{i}_order"))
+        data["structure_broken_level"] = clean_text(structure.get("broken_level"), "N/A")
+        data["vs_detected"] = "VALID" if direction == "VS" else "INVALID"
+        data["vr_detected"] = "VALID" if direction == "VR" else "INVALID"
+        data["reasoning"] = (clean_text(data.get("reasoning"), "") + "\n\nSNRZ Structure Detector: " + clean_text(structure.get("visual_reason"), "Visual structure confirmed.")).strip()
+    else:
+        # If specialist cannot prove structure, keep NONE. This prevents the second
+        # broad analysis from hallucinating VS/VR.
+        data["structure_direction"] = "NONE"
+        data["structure_valid"] = False
+        data["vs_detected"] = "INVALID"
+        data["vr_detected"] = "INVALID"
+        data["rejection_reason"] = "VS/VR لە H1/H4 ـدا بە بەڵگەی ڕوونی پێنج هەنگاوەکە پشتڕاست نەکرایەوە."
+        data["wait_for"] = "چاوەڕێی VS یان VR ـێکی ڕوون و تەواو لە H1/H4 بکە."
+    return data
+
+
 def call_gemini_model(model_name: str, zone_image: bytes, confirmation_image: bytes) -> str:
     prompt = r'''
 Analyze TWO XAUUSD screenshots.
@@ -871,6 +1057,12 @@ For structure_step_1..5 use the canonical English labels exactly:
 VS: SUPPORT | ..., UP | ..., NEW RESISTANCE AFTER SUPPORT | ..., UP AGAIN | ..., BREAK SAME NEW RESISTANCE | ...
 VR: RESISTANCE | ..., DOWN | ..., NEW SUPPORT AFTER RESISTANCE | ..., DOWN AGAIN | ..., BREAK SAME NEW SUPPORT | ...
 If not visually proven, use NOT PROVEN and structure_valid=false, structure_direction=NONE.
+
+MANDATORY STRUCTURE NUMERIC EVIDENCE:
+Return numeric levels and approximate left-to-right order for all 5 structure steps.
+Fields: structure_step_1_level, structure_step_2_level, structure_step_3_level, structure_step_4_level, structure_step_5_level, structure_broken_level, and structure_step_1_order through structure_step_5_order.
+The broken_level MUST refer to the SAME level created in step 3, not another support/resistance.
+If any of these cannot be read confidently from the chart, return NONE / structure_valid=false.
 
 Do not guess Zone, prices, retest, confirmation, or levels.
 Return JSON ONLY.
@@ -900,10 +1092,33 @@ def analyze_two_charts(zone_image: bytes, confirmation_image: bytes) -> Dict[str
     for model_name in models:
         for attempt in range(1, GEMINI_RETRIES + 1):
             try:
-                logger.info(f"Gemini model={model_name} attempt={attempt}/{GEMINI_RETRIES}")
+                logger.info(f"Gemini structure detector model={model_name} attempt={attempt}/{GEMINI_RETRIES}")
+                structure = call_structure_detector(model_name, zone_image)
+                logger.info("Dedicated H1/H4 structure result: %s", structure.get("direction"))
+
+                # If H1/H4 itself is not a valid VS/VR, there is no reason to ask
+                # the broad analyzer to invent one. Return a clean WAIT.
+                detected_direction = normalize_structure(structure.get("direction"))
+                detected_valid = parse_bool(structure.get("valid"))
+                detected_conf = safe_float(structure.get("confidence")) or 0.0
+                if detected_direction not in {"VS", "VR"} or not detected_valid or detected_conf < 60:
+                    data = normalize_result({})
+                    data["structure_direction"] = "NONE"
+                    data["structure_valid"] = False
+                    data["vs_detected"] = "INVALID"
+                    data["vr_detected"] = "INVALID"
+                    data["htf_direction"] = "UNKNOWN"
+                    data["ltf_direction"] = "UNKNOWN"
+                    data["reasoning"] = clean_text(structure.get("visual_reason"), "VS/VR ـی ڕوون نەبینرا.")
+                    data["rejection_reason"] = "VS یان VR ـی ڕوون و تەواو لە H1/H4 نەبینراوە."
+                    data["wait_for"] = "چاوەڕێی ئەوە بکە کە یەکێک لە VS یان VR بە هەموو ٥ هەنگاوەکە بە ڕوونی دروست بێت."
+                    return run_final_engine(data)
+
                 raw = call_gemini_model(model_name, zone_image, confirmation_image)
                 parsed = json.loads(clean_json(raw))
-                return run_final_engine(normalize_result(parsed))
+                parsed = normalize_result(parsed)
+                parsed = apply_structure_detector(parsed, structure)
+                return run_final_engine(parsed)
             except Exception as exc:
                 last_error = exc
                 logger.exception("Gemini analysis failed.")
