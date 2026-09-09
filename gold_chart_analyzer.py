@@ -555,6 +555,8 @@ GEMINI_SCHEMA = {
     "properties": {
         "signal": {"type": "string"}, "symbol": {"type": "string"},
         "structure_direction": {"type": "string"}, "structure_valid": {"type": "boolean"},
+        "structure_detector_valid": {"type": "boolean"}, "structure_detector_confidence": {"type": "number"},
+        "structure_visual_reason": {"type": "string"},
         "structure_step_1": {"type": "string"}, "structure_step_2": {"type": "string"},
         "structure_step_3": {"type": "string"}, "structure_step_4": {"type": "string"},
         "structure_step_5": {"type": "string"},
@@ -628,6 +630,9 @@ def normalize_result(data: Dict[str, Any]) -> Dict[str, Any]:
     result["signal"] = normalize_side(result.get("signal"))
     result["symbol"] = "XAUUSD"
     result["structure_direction"] = normalize_structure(result.get("structure_direction"))
+    result["structure_detector_valid"] = parse_bool(result.get("structure_detector_valid"))
+    result["structure_detector_confidence"] = safe_float(result.get("structure_detector_confidence")) or 0.0
+    result["structure_visual_reason"] = clean_text(result.get("structure_visual_reason"), "")
     for key in ["structure_step_1_level","structure_step_2_level","structure_step_3_level","structure_step_4_level","structure_step_5_level","structure_broken_level"]:
         result[key] = clean_text(result.get(key), "N/A")
     for key in ["structure_step_1_order","structure_step_2_order","structure_step_3_order","structure_step_4_order","structure_step_5_order"]:
@@ -705,75 +710,53 @@ def parse_order(value: Any) -> Optional[float]:
 
 
 def structure_numeric_valid(data: Dict[str, Any], direction: str) -> bool:
+    """Optional consistency check only. It must never reject a clearly visible structure
+    merely because price labels are unreadable in a screenshot."""
     levels = [safe_float(data.get(f"structure_step_{i}_level")) for i in range(1, 6)]
     orders = [parse_order(data.get(f"structure_step_{i}_order")) for i in range(1, 6)]
-    broken = safe_float(data.get("structure_broken_level"))
-
-    if any(v is None for v in levels) or broken is None:
-        return False
-    if any(v is None for v in orders):
-        return False
+    if any(v is None for v in levels) or any(v is None for v in orders):
+        return True  # visual detector remains authoritative
     if any(orders[i] >= orders[i + 1] for i in range(4)):
         return False
-
     s1, s2, s3, s4, s5 = levels
+    broken = safe_float(data.get("structure_broken_level"))
     if direction == "VS":
         if not (s2 > s1 and s4 > s3 and s5 > s3):
             return False
-        if abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
+        if broken is not None and abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
             return False
         return True
     if direction == "VR":
         if not (s2 < s1 and s4 < s3 and s5 < s3):
             return False
-        if abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
+        if broken is not None and abs(broken - s3) > STRUCTURE_LEVEL_TOLERANCE:
             return False
         return True
     return False
 
 
 def structure_steps_valid(data: Dict[str, Any], direction: str) -> bool:
-    if data.get("structure_valid") is not True:
-        return False
+    """Use the dedicated H1/H4 visual detector as the primary truth.
+    Text/numeric fields are supporting evidence, not a second independent gate."""
     if normalize_structure(data.get("structure_direction")) != direction:
         return False
+    if data.get("structure_detector_valid") is True:
+        conf = safe_float(data.get("structure_detector_confidence")) or 0.0
+        if conf >= 55 and structure_numeric_valid(data, direction):
+            return True
 
-    steps = [clean_text(data.get(f"structure_step_{i}"), "").strip().upper() for i in range(1, 6)]
-    if any(not step or step == "NOT PROVEN" for step in steps):
+    if data.get("structure_valid") is not True:
         return False
-
-    # Canonical labels are still checked, but they are NOT sufficient by themselves.
+    steps = [clean_text(data.get(f"structure_step_{i}"), "").upper() for i in range(1, 6)]
+    if any(not x or x == "NOT PROVEN" for x in steps):
+        return False
+    joined = " | ".join(steps)
     if direction == "VS":
-        required = [
-            (0, ("SUPPORT",)),
-            (1, ("UP",)),
-            (2, ("NEW RESISTANCE",)),
-            (3, ("UP AGAIN",)),
-            (4, ("BREAK SAME NEW RESISTANCE",)),
-        ]
-        for idx, words in required:
-            if not any(word in steps[idx] for word in words):
-                return False
-        if "NEW RESISTANCE AFTER SUPPORT" not in steps[2]:
-            return False
-        return True
-
+        return all(x in joined for x in ("SUPPORT", "UP", "NEW RESISTANCE", "UP AGAIN", "BREAK SAME NEW RESISTANCE"))
     if direction == "VR":
-        required = [
-            (0, ("RESISTANCE",)),
-            (1, ("DOWN",)),
-            (2, ("NEW SUPPORT",)),
-            (3, ("DOWN AGAIN",)),
-            (4, ("BREAK SAME NEW SUPPORT",)),
-        ]
-        for idx, words in required:
-            if not any(word in steps[idx] for word in words):
-                return False
-        if "NEW SUPPORT AFTER RESISTANCE" not in steps[2]:
-            return False
-        return True
-
+        return all(x in joined for x in ("RESISTANCE", "DOWN", "NEW SUPPORT", "DOWN AGAIN", "BREAK SAME NEW SUPPORT"))
     return False
+
 
 def validate_structure(data: Dict[str, Any], signal_side: str) -> bool:
     expected = "VS" if signal_side == "BUY" else "VR" if signal_side == "SELL" else "NONE"
@@ -781,13 +764,6 @@ def validate_structure(data: Dict[str, Any], signal_side: str) -> bool:
         return False
     structure = normalize_structure(data.get("structure_direction"))
     if structure != expected:
-        return False
-    # Never allow both structures to be declared at the same time.
-    vs_text = clean_text(data.get("vs_detected"), "").upper()
-    vr_text = clean_text(data.get("vr_detected"), "").upper()
-    if structure == "VS" and contains_any(vr_text, ("VALID", "CONFIRMED")) and "INVALID" not in vr_text:
-        return False
-    if structure == "VR" and contains_any(vs_text, ("VALID", "CONFIRMED")) and "INVALID" not in vs_text:
         return False
     return structure_steps_valid(data, expected)
 
@@ -1022,9 +998,12 @@ def apply_structure_detector(data: Dict[str, Any], structure: Dict[str, Any]) ->
     steps = [clean_text(structure.get(f"step_{i}"), "NOT PROVEN") for i in range(1, 6)]
     # Specialist is intentionally authoritative for VS/VR. The full analyzer cannot
     # overwrite a clear structure decision with NONE.
-    if direction in {"VS", "VR"} and valid and confidence >= 60 and all(s.upper() != "NOT PROVEN" for s in steps):
+    if direction in {"VS", "VR"} and valid and confidence >= 55:
         data["structure_direction"] = direction
         data["structure_valid"] = True
+        data["structure_detector_valid"] = True
+        data["structure_detector_confidence"] = confidence
+        data["structure_visual_reason"] = clean_text(structure.get("visual_reason"), "")
         for i in range(1, 6):
             data[f"structure_step_{i}"] = steps[i-1]
             data[f"structure_step_{i}_level"] = clean_text(structure.get(f"step_{i}_level"), "N/A")
@@ -1038,6 +1017,9 @@ def apply_structure_detector(data: Dict[str, Any], structure: Dict[str, Any]) ->
         # broad analysis from hallucinating VS/VR.
         data["structure_direction"] = "NONE"
         data["structure_valid"] = False
+        data["structure_detector_valid"] = False
+        data["structure_detector_confidence"] = confidence
+        data["structure_visual_reason"] = clean_text(structure.get("visual_reason"), "")
         data["vs_detected"] = "INVALID"
         data["vr_detected"] = "INVALID"
         data["rejection_reason"] = "VS/VR لە H1/H4 ـدا بە بەڵگەی ڕوونی پێنج هەنگاوەکە پشتڕاست نەکرایەوە."
@@ -1101,10 +1083,13 @@ def analyze_two_charts(zone_image: bytes, confirmation_image: bytes) -> Dict[str
                 detected_direction = normalize_structure(structure.get("direction"))
                 detected_valid = parse_bool(structure.get("valid"))
                 detected_conf = safe_float(structure.get("confidence")) or 0.0
-                if detected_direction not in {"VS", "VR"} or not detected_valid or detected_conf < 60:
+                if detected_direction not in {"VS", "VR"} or not detected_valid or detected_conf < 55:
                     data = normalize_result({})
                     data["structure_direction"] = "NONE"
                     data["structure_valid"] = False
+                    data["structure_detector_valid"] = False
+                    data["structure_detector_confidence"] = detected_conf
+                    data["structure_visual_reason"] = clean_text(structure.get("visual_reason"), "")
                     data["vs_detected"] = "INVALID"
                     data["vr_detected"] = "INVALID"
                     data["htf_direction"] = "UNKNOWN"
@@ -1147,169 +1132,148 @@ def download_telegram_photo(message: Dict[str, Any]) -> Optional[bytes]:
     return telegram.download_file(path)
 
 
+def _kurdish_direction(value: Any) -> str:
+    text = clean_text(value, "نادیارە").upper()
+    return {"BULLISH": "بەریش / بەرەو سەر", "BEARISH": "بێریش / بەرەو خوار", "RANGE": "مەودا / لاوازی", "UNKNOWN": "نادیارە"}.get(text, clean_text(value, "نادیارە"))
+
+
+def _kurdish_setup(value: Any) -> str:
+    text = clean_text(value, "نادیارە")
+    mapping = {
+        "SNRZ Visual Resistance (VR) Breakout": "شکاندنی VR ـی بەرگریی SNRZ",
+        "SNRZ Visual Support (VS) Breakout": "شکاندنی VS ـی پاڵپشتیی SNRZ",
+        "N/A": "نادیارە",
+    }
+    return mapping.get(text, text)
+
+
 def format_checks(data: Dict[str, Any]) -> str:
     signal_side = normalize_side(data.get("signal"))
     if signal_side not in {"BUY", "SELL"}:
         signal_side = determine_direction(data)
     if signal_side not in {"BUY", "SELL"}:
-        return "❌ Strong validation path نییە."
+        return "❌ هێشتا ڕێگای سیگناڵی بەهێز تەواو نییە."
     checks = validation_checks(data, signal_side)
-    names = [("SNRZ Structure", "structure"), ("Zone", "zone"), ("Price at Zone", "price_at_zone"), ("Pullback / Retest", "pullback"), ("Confirmation", "confirmation"), ("HTF / LTF", "htf_ltf"), ("Entry / SL / TP", "levels"), ("RR >= 1:2", "rr"), ("No Rejection", "no_rejection")]
+    names = [
+        ("پێکهاتەی SNRZ", "structure"),
+        ("Zone", "zone"),
+        ("گەیشتنەوەی نرخ بۆ Zone", "price_at_zone"),
+        ("گەڕانەوە / Retest", "pullback"),
+        ("Confirmation", "confirmation"),
+        ("هاوتایی HTF / LTF", "htf_ltf"),
+        ("Entry / SL / TP", "levels"),
+        ("RR لانیکەم 1:2", "rr"),
+        ("بێ rejection", "no_rejection"),
+    ]
     return "\n".join(f"{'✅' if checks[key] else '❌'} {name}" for name, key in names)
+
+
+def _kurdish_structure_step(direction: str, idx: int, data: Dict[str, Any]) -> str:
+    labels_vs = {
+        1: "پاڵپشتی دەرکەوتووە",
+        2: "نرخ لە پاڵپشتییەکەوە بەرز بووەتەوە",
+        3: "بەرگرییەکی نوێ دوای پاڵپشتی دروست بووە",
+        4: "نرخ دووبارە بەرز بووەتەوە",
+        5: "هەمان بەرگریی نوێ شکێندراوە",
+    }
+    labels_vr = {
+        1: "بەرگری دەرکەوتووە",
+        2: "نرخ لە بەرگرییەکەوە دابەزیوە",
+        3: "پاڵپشتییەکی نوێ دوای بەرگری دروست بووە",
+        4: "نرخ دووبارە دابەزیوە",
+        5: "هەمان پاڵپشتییە نوێیە شکێندراوە",
+    }
+    label = (labels_vs if direction == "VS" else labels_vr).get(idx, "")
+    level = safe_float(data.get(f"structure_step_{idx}_level"))
+    if level is not None:
+        return f"{label} — {level:.2f}"
+    return label
 
 
 def format_signal(data: Dict[str, Any]) -> str:
     signal_side = normalize_side(data.get("signal"))
-    title = "🟢 STRONG BUY SIGNAL" if signal_side == "BUY" else "🔴 STRONG SELL SIGNAL" if signal_side == "SELL" else "🟡 WAIT"
-    score = safe_float(data.get("score"))
-    confidence = safe_float(data.get("confidence"))
+    title = "🟢 BUY — سیگناڵی بەهێز" if signal_side == "BUY" else "🔴 SELL — سیگناڵی بەهێز" if signal_side == "SELL" else "🟡 WAIT — چاوەڕێ بکە"
+    score = safe_float(data.get("score")) or 0
+    confidence = safe_float(data.get("confidence")) or 0
     zone = zone_from_data(data)
-    zone_price = f"{zone[0]:.2f} - {zone[1]:.2f}" if zone else clean_text(data.get("zone_price"), "N/A")
-    score_text = f"{score:.0f}/100" if score is not None else "0/100"
-    confidence_text = f"{confidence:.0f}%" if confidence is not None else "0%"
-    text = f'''{title}
-━━━━━━━━━━━━━━━━━━
-
-🥇 XAUUSD
-
-📊 Score:
-{score_text}
-
-💪 Confidence:
-{confidence_text}
-
-📈 Trend:
-{clean_text(data.get("trend"), "N/A")}
-
-🧠 Setup:
-{clean_text(data.get("setup"), "N/A")}
-
-━━━━━━━━━━━━━━━━━━
-
-🧩 Structure:
-{clean_text(data.get("structure_direction"), "NONE")}
-
-🟦 Zone:
-{clean_text(data.get("zone"), "N/A")}
-
-📍 Zone Price:
-{zone_price}
-
-━━━━━━━━━━━━━━━━━━
-
-🟢 VS:
-{clean_text(data.get("vs_detected"), "نادیارە")}
-
-🔴 VR:
-{clean_text(data.get("vr_detected"), "نادیارە")}
-
-🔎 Confirmation:
-{clean_text(data.get("confirmation"), "NONE")}
-
-📊 HTF:
-{clean_text(data.get("htf_direction"), "UNKNOWN")}
-
-📊 LTF:
-{clean_text(data.get("ltf_direction"), "UNKNOWN")}
-'''
-    text = text.strip()
-    if signal_side in {"BUY", "SELL"}:
-        text += f'''\n\n━━━━━━━━━━━━━━━━━━
-
-🎯 Entry:
-{clean_text(data.get("entry"), "N/A")}
-
-🛑 SL:
-{clean_text(data.get("sl"), "N/A")}
-
-🥇 TP1:
-{clean_text(data.get("tp1"), "N/A")}
-
-🥈 TP2:
-{clean_text(data.get("tp2"), "N/A")}
-
-🥉 TP3:
-{clean_text(data.get("tp3"), "N/A")}
-
-📊 R:R:
-{clean_text(data.get("rr"), "N/A")}
-'''
-    text += f'''\n━━━━━━━━━━━━━━━━━━
-
-🔎 هۆکاری شیکردنەوە:
-
-{clean_text(data.get("reasoning"), "هیچ بەڵگەی تەواو نییە.")}
-
-━━━━━━━━━━━━━━━━━━
-
-✅ Final Checks:
-
-{format_checks(data)}'''
-    if signal_side == "WAIT":
-        text += f'''\n\n━━━━━━━━━━━━━━━━━━
-
-🚫 هۆکاری WAIT:
-
-{clean_text(data.get("rejection_reason"), "هەموو مەرجەکانی Strong Signal تەواو نەبوون.")}
-
-━━━━━━━━━━━━━━━━━━
-
-👀 چاوەڕێی چی بکەین؟
-
-{clean_text(data.get("wait_for"), "چاوەڕێی setup ـێکی تەواو بکە.")}
-
-━━━━━━━━━━━━━━━━━━
-
-⚠️ هیچ Entry ـێک تا تەواوبوونی
-هەموو مەرجە سەرەکییەکان نابێت.'''
+    zone_price = f"{zone[0]:.2f} – {zone[1]:.2f}" if zone else "نادیارە"
+    structure = normalize_structure(data.get("structure_direction"))
+    if structure == "VS":
+        structure_name = "VS — پێکهاتەی بەرزبوونەوە"
+    elif structure == "VR":
+        structure_name = "VR — پێکهاتەی دابەزین"
     else:
-        text += "\n\n━━━━━━━━━━━━━━━━━━\n\n🔥 STRONG SNRZ SETUP\n\nهەموو مەرجە سەرەکییەکانی SNRZ validation تێپەڕێنراون.\n\n⚠️ ئەمە شیکردنەوەی تەکنیکییە؛ دڵنیایی بە قازانج نادات."
-    return text.strip()
+        structure_name = "هیچ VS/VR ـێکی پشتڕاست نییە"
 
+    lines = [
+        title,
+        "━━━━━━━━━━━━━━━━━━",
+        "🥇 XAUUSD",
+        "",
+        f"📊 نمرە: {score:.0f}/100",
+        f"💪 دڵنیایی: {confidence:.0f}%",
+        f"📈 ئاراستە: {_kurdish_direction(data.get('trend'))}",
+        f"🧠 جۆری setup: {_kurdish_setup(data.get('setup'))}",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "🧩 پێکهاتەی H1/H4:",
+        structure_name,
+    ]
 
-START_MESSAGE = """🥇 Gold Chart Analyzer PRO V7
+    if structure in {"VS", "VR"}:
+        lines += [
+            "",
+            "🔎 ٥ هەنگاوی پێکهاتە:",
+            f"1️⃣ {_kurdish_structure_step(structure, 1, data)}",
+            f"2️⃣ {_kurdish_structure_step(structure, 2, data)}",
+            f"3️⃣ {_kurdish_structure_step(structure, 3, data)}",
+            f"4️⃣ {_kurdish_structure_step(structure, 4, data)}",
+            f"5️⃣ {_kurdish_structure_step(structure, 5, data)}",
+        ]
 
-🧠 SNRZ Structure Engine
-━━━━━━━━━━━━━━━━━━
+    lines += [
+        "",
+        "🟦 Zone:",
+        zone_price,
+        f"📍 نرخی Zone: {zone_price}",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "📱 M1/M5 — تەنها Retest و Confirmation",
+        f"🔄 گەڕانەوە بۆ Zone: {'بەڵێ ✅' if data.get('price_at_zone') else 'نەخێر ❌'}",
+        f"🔎 Confirmation: {clean_text(data.get('confirmation'), 'NONE')}",
+        "",
+        f"📊 HTF: {clean_text(data.get('htf_direction'), 'نادیارە')}",
+        f"📊 LTF: {clean_text(data.get('ltf_direction'), 'نادیارە')}",
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+    ]
 
-VS / VR → Zone → Pullback / Retest → M1/M5 Confirmation → HTF/LTF Agreement → RR → BUY / SELL / WAIT
+    if signal_side == "WAIT":
+        lines += [
+            "🔎 هۆکاری چاوەڕوانی:",
+            clean_text(data.get("rejection_reason"), "هەموو مەرجەکان تەواو نەبوون."),
+            "",
+            "👀 چاوەڕێی چی بکەین؟",
+            clean_text(data.get("wait_for"), "چاوەڕێی مەرجی دواتر بکە."),
+        ]
+    else:
+        lines += [
+            "💰 Entry:", clean_text(data.get("entry"), "N/A"),
+            "🛑 SL:", clean_text(data.get("sl"), "N/A"),
+            "🎯 TP1:", clean_text(data.get("tp1"), "N/A"),
+            "📐 RR:", clean_text(data.get("rr"), "N/A"),
+        ]
 
-📸 هەنگاوی 1: H1 یان H4 ـی XAUUSD بنێرە.
-📸 هەنگاوی 2: M1 یان M5 بنێرە.
+    lines += [
+        "",
+        "━━━━━━━━━━━━━━━━━━",
+        "📋 دۆخی مەرجەکان:",
+        format_checks(data),
+        "",
+        "⚠️ هیچ Entry ـێک تا تەواوبوونی هەموو مەرجە سەرەکییەکان نابێت.",
+    ]
+    return "\n".join(lines)
 
-ئەگەر مەرجەکان تەواو نەبن: 🟡 WAIT
-
-/reset
-/help"""
-
-HELP_MESSAGE = """📚 Gold Chart Analyzer PRO V7
-━━━━━━━━━━━━━━━━━━
-
-🟢 VS:
-Support → Up → NEW Resistance → Up Again → Break SAME NEW Resistance
-
-🔴 VR:
-Resistance → Down → NEW Support → Down Again → Break SAME NEW Support
-
-🟦 Zone:
-Formation candle + immediately previous candle → shorter BODY wins → full HIGH-to-LOW
-
-🔄 Sequence:
-VS/VR → Zone → Retest → Confirmation → Entry
-
-🟢 BUY: RBS / SRR / I.VR / PO2
-🔴 SELL: SBR / RSS / I.VS / PO2
-
-🔥 STRONG: Score >= 80, Confidence >= 80%, RR >= 1:2
-
-Otherwise: 🟡 WAIT
-
-/reset"""
-
-
-# ============================================================
-# MESSAGE / UPDATE HANDLERS
-# ============================================================
 
 def handle_message(message: Dict[str, Any]):
     chat_id = message.get("chat", {}).get("id")
