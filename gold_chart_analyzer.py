@@ -1019,15 +1019,43 @@ def handle_admin_command(
         )
     )
 
-    if not is_admin(
-        user_id
-    ):
+    # --------------------------------------------------------
+    # Only Admin
+    # --------------------------------------------------------
 
+    if not is_admin(user_id):
         return False
 
-    command = text.split(
-        maxsplit=1
-    )[0].lower()
+    # --------------------------------------------------------
+    # IMPORTANT:
+    # Photo messages and other non-text messages can have
+    # empty text. Never access split()[0] without checking.
+    # --------------------------------------------------------
+
+    raw_text = str(text or "").strip()
+
+    if not raw_text:
+        return False
+
+    # --------------------------------------------------------
+    # SAFE COMMAND PARSING
+    # --------------------------------------------------------
+
+    parts = raw_text.split(maxsplit=1)
+
+    command = (
+        parts[0]
+        .split("@", 1)[0]
+        .lower()
+        if parts
+        else ""
+    )
+
+    argument = (
+        parts[1].strip()
+        if len(parts) > 1
+        else ""
+    )
 
     # --------------------------------------------------------
     # ADD USER
@@ -1035,31 +1063,58 @@ def handle_admin_command(
 
     if command == "/adduser":
 
-        parts = text.split()
-
-        if len(parts) != 2:
+        if not argument:
 
             telegram.send_message(
                 chat_id,
-                "❌ بەکارهێنان:\n/adduser USER_ID"
+                """
+❌ بەکارهێنانی هەڵەیە.
+
+نموونە:
+
+/adduser USER_ID
+""".strip()
             )
 
             return True
+
+        # Only first argument is used.
+        user_id_text = argument.split()[0]
 
         try:
 
             new_user_id = int(
-                parts[1]
+                user_id_text
             )
 
-        except ValueError:
+        except (ValueError, TypeError):
 
             telegram.send_message(
                 chat_id,
-                "❌ User ID دەبێت ژمارە بێت."
+                """
+❌ User ID دەبێت تەنها ژمارە بێت.
+
+نموونە:
+
+/adduser 123456789
+""".strip()
             )
 
             return True
+
+        if new_user_id <= 0:
+
+            telegram.send_message(
+                chat_id,
+                "❌ User ID ـەکە دروست نییە."
+            )
+
+            return True
+
+        already_exists = (
+            new_user_id
+            in ALLOWED_USER_IDS
+        )
 
         ALLOWED_USER_IDS.add(
             new_user_id
@@ -1067,9 +1122,12 @@ def handle_admin_command(
 
         save_allowed_users()
 
-        request = PENDING_ACCESS_REQUESTS.pop(
-            new_user_id,
-            None
+        # Remove pending request if exists.
+        request = (
+            PENDING_ACCESS_REQUESTS.pop(
+                new_user_id,
+                None
+            )
         )
 
         if request:
@@ -1085,9 +1143,25 @@ def handle_admin_command(
                     None
                 )
 
-        telegram.send_message(
-            chat_id,
-            f"""
+        if already_exists:
+
+            telegram.send_message(
+                chat_id,
+                f"""
+ℹ️ ئەم User ـە پێشتر ڕێگەپێدراوە.
+
+🆔 {new_user_id}
+
+👥 Total:
+{len(ALLOWED_USER_IDS)}
+""".strip()
+            )
+
+        else:
+
+            telegram.send_message(
+                chat_id,
+                f"""
 ✅ بەکارهێنەر زیادکرا.
 
 🆔 {new_user_id}
@@ -1095,7 +1169,7 @@ def handle_admin_command(
 👥 Total:
 {len(ALLOWED_USER_IDS)}
 """.strip()
-        )
+            )
 
         return True
 
@@ -1105,32 +1179,45 @@ def handle_admin_command(
 
     if command == "/removeuser":
 
-        parts = text.split()
-
-        if len(parts) != 2:
+        if not argument:
 
             telegram.send_message(
                 chat_id,
-                "❌ بەکارهێنان:\n/removeuser USER_ID"
+                """
+❌ بەکارهێنانی هەڵەیە.
+
+نموونە:
+
+/removeuser USER_ID
+""".strip()
             )
 
             return True
+
+        user_id_text = argument.split()[0]
 
         try:
 
             remove_user_id = int(
-                parts[1]
+                user_id_text
             )
 
-        except ValueError:
+        except (ValueError, TypeError):
 
             telegram.send_message(
                 chat_id,
-                "❌ User ID دەبێت ژمارە بێت."
+                """
+❌ User ID دەبێت تەنها ژمارە بێت.
+
+نموونە:
+
+/removeuser 123456789
+""".strip()
             )
 
             return True
 
+        # Never remove Admin.
         if remove_user_id == ADMIN_USER_ID:
 
             telegram.send_message(
@@ -1148,16 +1235,33 @@ def handle_admin_command(
 
             save_allowed_users()
 
+            # Also reset their session.
+            reset_session(
+                remove_user_id
+            )
+
             telegram.send_message(
                 chat_id,
-                f"✅ User {remove_user_id} سڕایەوە."
+                f"""
+✅ User سڕایەوە.
+
+🆔 {remove_user_id}
+
+👥 Total:
+{len(ALLOWED_USER_IDS)}
+""".strip()
             )
 
         else:
 
             telegram.send_message(
                 chat_id,
-                "ℹ️ User ID لە لیستدا نییە."
+                f"""
+ℹ️ ئەم User ID ـە لە لیستی
+Allowed Users ـدا نییە.
+
+🆔 {remove_user_id}
+""".strip()
             )
 
         return True
@@ -1167,6 +1271,15 @@ def handle_admin_command(
     # --------------------------------------------------------
 
     if command == "/users":
+
+        if not ALLOWED_USER_IDS:
+
+            telegram.send_message(
+                chat_id,
+                "📭 هیچ بەکارهێنەرێک نییە."
+            )
+
+            return True
 
         lines = []
 
@@ -1188,10 +1301,12 @@ def handle_admin_command(
 
         telegram.send_message(
             chat_id,
-            "👥 ALLOWED USERS\n"
-            "━━━━━━━━━━━━━━\n"
-            + "\n".join(lines)
-            + f"\n\nTotal: {len(ALLOWED_USER_IDS)}"
+            (
+                "👥 ALLOWED USERS\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(lines)
+                + f"\n\n📊 Total: {len(ALLOWED_USER_IDS)}"
+            )
         )
 
         return True
@@ -1217,10 +1332,29 @@ def handle_admin_command(
             PENDING_ACCESS_REQUESTS.items()
         ):
 
+            first_name = request.get(
+                "first_name",
+                "Unknown"
+            )
+
+            last_name = request.get(
+                "last_name",
+                ""
+            )
+
             username = request.get(
                 "username",
                 ""
             )
+
+            code = request.get(
+                "code",
+                "N/A"
+            )
+
+            full_name = (
+                f"{first_name} {last_name}"
+            ).strip()
 
             username_text = (
                 f"@{username}"
@@ -1229,19 +1363,22 @@ def handle_admin_command(
             )
 
             lines.append(
-                f"""
-👤 {request.get("first_name", "Unknown")}
-🔗 {username_text}
-🆔 {uid}
-🔑 {request.get("code", "N/A")}
-"""
+                (
+                    f"👤 {full_name}\n"
+                    f"🔗 {username_text}\n"
+                    f"🆔 {uid}\n"
+                    f"🔑 {code}\n"
+                    "━━━━━━━━━━━━━━━━━━"
+                )
             )
 
         telegram.send_message(
             chat_id,
-            "⏳ PENDING REQUESTS\n"
-            "━━━━━━━━━━━━━━━━━━\n"
-            + "\n".join(lines)
+            (
+                "⏳ PENDING REQUESTS\n"
+                "━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(lines)
+            )
         )
 
         return True
@@ -1252,15 +1389,17 @@ def handle_admin_command(
 
     if command == "/broadcast":
 
-        broadcast_text = text[
-            len("/broadcast"):
-        ].strip()
-
-        if not broadcast_text:
+        if not argument:
 
             telegram.send_message(
                 chat_id,
-                "❌ پەیامەکە بنووسە."
+                """
+❌ پەیامەکە بنووسە.
+
+نموونە:
+
+/broadcast Hello everyone
+""".strip()
             )
 
             return True
@@ -1276,7 +1415,7 @@ def handle_admin_command(
 
                 telegram.send_message(
                     uid,
-                    broadcast_text
+                    argument
                 )
 
                 success += 1
@@ -1285,13 +1424,20 @@ def handle_admin_command(
 
                 failed += 1
 
+                logger.exception(
+                    f"Broadcast failed for user {uid}"
+                )
+
         telegram.send_message(
             chat_id,
             f"""
 📢 Broadcast تەواوبوو.
 
-✅ {success}
-❌ {failed}
+✅ نێردراو:
+{success}
+
+❌ سەرکەوتوو نەبوو:
+{failed}
 """.strip()
         )
 
@@ -1309,14 +1455,38 @@ def handle_admin_command(
 👑 ADMIN PANEL
 ━━━━━━━━━━━━━━━━━━
 
+➕ /adduser USER_ID
+
+➖ /removeuser USER_ID
+
+👥 /users
+
+⏳ /pending
+
+📢 /broadcast MESSAGE
+""".strip()
+        )
+
+        return True
+
+    # --------------------------------------------------------
+    # UNKNOWN ADMIN COMMAND
+    # --------------------------------------------------------
+
+    if command.startswith("/"):
+
+        telegram.send_message(
+            chat_id,
+            """
+❌ فەرمانەکە نەناسراوە.
+
+👑 ADMIN COMMANDS:
+
+/admin
 /adduser USER_ID
-
 /removeuser USER_ID
-
 /users
-
 /pending
-
 /broadcast MESSAGE
 """.strip()
         )
@@ -1324,7 +1494,6 @@ def handle_admin_command(
         return True
 
     return False
-
 
 # ============================================================
 # GEMINI SYSTEM PROMPT
