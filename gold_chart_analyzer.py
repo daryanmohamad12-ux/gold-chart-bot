@@ -736,15 +736,21 @@ def structure_numeric_valid(data: Dict[str, Any], direction: str) -> bool:
 
 
 def structure_steps_valid(data: Dict[str, Any], direction: str) -> bool:
-    """Use the dedicated H1/H4 visual detector as the primary truth.
-    Text/numeric fields are supporting evidence, not a second independent gate."""
+    """H1/H4 structure is authoritative.
+
+    The dedicated structure detector sees ONLY the H1/H4 image, so once it
+    returns a valid VS/VR with sufficient confidence, no numeric parsing,
+    broad Gemini result, or M1/M5 data is allowed to invalidate it.
+    """
     if normalize_structure(data.get("structure_direction")) != direction:
         return False
+
+    # AUTHORITATIVE H1/H4 GATE. Do not run numeric/step validation here.
     if data.get("structure_detector_valid") is True:
         conf = safe_float(data.get("structure_detector_confidence")) or 0.0
-        if conf >= 55 and structure_numeric_valid(data, direction):
-            return True
+        return conf >= 55
 
+    # Legacy/fallback path only when no dedicated detector result exists.
     if data.get("structure_valid") is not True:
         return False
     steps = [clean_text(data.get(f"structure_step_{i}"), "").upper() for i in range(1, 6)]
@@ -896,7 +902,7 @@ def determine_direction(data: Dict[str, Any]) -> str:
 def missing_reasons(data: Dict[str, Any], signal_side: str, checks: Dict[str, bool]) -> List[str]:
     reasons = []
     if not checks["structure"]:
-        reasons.append("SNRZ structure ـی 5 step بە تەواوی پشتڕاست نەکراوەتەوە.")
+        reasons.append("SNRZ structure ـی 5 step لە H1/H4 بە تەواوی پشتڕاست نەکراوەتەوە.")
     if not checks["zone"]:
         reasons.append("Zone بە یاسای shorter body پشتڕاست نەکراوەتەوە.")
     if not checks["price_at_zone"]:
@@ -920,7 +926,7 @@ def next_action(data: Dict[str, Any], signal_side: str, checks: Dict[str, bool])
     zone = zone_from_data(data)
     zone_text = f"{zone[0]:.2f} - {zone[1]:.2f}" if zone else "N/A"
     if not checks["structure"]:
-        return "چاوەڕێی VS بکە: Support → Up → NEW Resistance → Up Again → Break SAME NEW Resistance." if signal_side == "BUY" else "چاوەڕێی VR بکە: Resistance → Down → NEW Support → Down Again → Break SAME NEW Support." if signal_side == "SELL" else "چاوەڕێی VS یان VR ـی تەواو بکە."
+        return "چاوەڕێی VS ـێکی تەواو لە H1/H4 بکە: Support → Up → NEW Resistance → Up Again → Break SAME NEW Resistance." if signal_side == "BUY" else "چاوەڕێی VR ـێکی تەواو لە H1/H4 بکە: Resistance → Down → NEW Support → Down Again → Break SAME NEW Support." if signal_side == "SELL" else "چاوەڕێی VS یان VR ـێکی تەواو لە H1/H4 بکە."
     if not checks["zone"]:
         return "Zone هێشتا بە یاسای shorter body پشتڕاست نەکراوەتەوە."
     if not checks["price_at_zone"]:
@@ -945,8 +951,8 @@ def run_final_engine(raw_data: Dict[str, Any]) -> Dict[str, Any]:
     structure = normalize_structure(data.get("structure_direction"))
     if structure == "NONE":
         data.update({"signal": "WAIT", "entry": "N/A", "sl": "N/A", "tp1": "N/A", "tp2": "N/A", "tp3": "N/A", "rr": "N/A", "score": 0, "confidence": 0})
-        data["rejection_reason"] = "VS یان VR ـی تەواو بە دڵنیایی نەدۆزرایەوە."
-        data["wait_for"] = "چاوەڕێی VS یان VR ـی تەواو بکە."
+        data["rejection_reason"] = "VS یان VR ـی تەواو لە H1/H4 بە دڵنیایی نەدۆزرایەوە."
+        data["wait_for"] = "چاوەڕێی VS یان VR ـێکی تەواو لە H1/H4 بکە."
         return data
     signal_side = determine_direction(data)
     checks = validation_checks(data, signal_side)
@@ -1199,9 +1205,9 @@ def format_signal(data: Dict[str, Any]) -> str:
     zone_price = f"{zone[0]:.2f} – {zone[1]:.2f}" if zone else "نادیارە"
     structure = normalize_structure(data.get("structure_direction"))
     if structure == "VS":
-        structure_name = "VS — پێکهاتەی بەرزبوونەوە"
+        structure_name = "✅ VS — پێکهاتەی بەرزبوونەوە (H1/H4 پشتڕاستکراوە)"
     elif structure == "VR":
-        structure_name = "VR — پێکهاتەی دابەزین"
+        structure_name = "✅ VR — پێکهاتەی دابەزین (H1/H4 پشتڕاستکراوە)"
     else:
         structure_name = "هیچ VS/VR ـێکی پشتڕاست نییە"
 
