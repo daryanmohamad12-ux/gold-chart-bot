@@ -1348,16 +1348,53 @@ def format_signal(data: Dict[str, Any]) -> str:
     ]
 
     if signal_side == "WAIT":
+        # WAIT explanation only: do not change SNRZ logic.
+        side = determine_direction(data)
+        zone = zone_from_data(data)
+        zone_text = f"{zone[0]:.2f} – {zone[1]:.2f}" if zone else "N/A"
+        checks = validation_checks(data, side) if side in {"BUY", "SELL"} else {
+            "structure": normalize_structure(data.get("structure_direction")) in {"VS", "VR"},
+            "zone": bool(zone),
+            "price_at_zone": bool(data.get("price_at_zone") is True),
+            "pullback": bool(data.get("pullback_valid") is True),
+            "confirmation": bool(validate_confirmation(data, side)) if side in {"BUY", "SELL"} else False,
+            "htf_ltf": False, "levels": False, "rr": False, "no_rejection": False
+        }
+
+        missing = []
+        labels = [
+            ("structure", "VS/VR ـی H1/H4"),
+            ("zone", "Zone"),
+            ("price_at_zone", "گەیشتنەوەی نرخ بۆ Zone"),
+            ("pullback", "Pullback / Retest"),
+            ("confirmation", "Confirmation ـی M1/M5"),
+            ("htf_ltf", "هاوتایی HTF/LTF"),
+            ("levels", "Entry / SL / TP"),
+            ("rr", "R:R ـی لانیکەم 1:2"),
+            ("no_rejection", "بێ rejection / fake breakout"),
+        ]
+        for key, label in labels:
+            if not checks.get(key, False):
+                missing.append(label)
+
         lines += [
             "━━━━━━━━━━━━━━━━━━",
-            "🧠 شیکردنەوەی ورد:",
+            "🧠 بۆچی WAIT ـە؟",
             build_detailed_explanation(data),
             "",
-            "🚫 هۆکاری کۆتاییی WAIT:",
-            clean_text(data.get("rejection_reason"), "هەموو مەرجەکان تەواو نەبوون."),
+            "🚫 ئەو شتانەی هێشتا ماون:",
+            "\n".join(f"❌ {item}" for item in missing) if missing else "❌ Strong Signal هێشتا پشتڕاست نییە.",
             "",
-            "👀 هەنگاوی دواتر:",
-            clean_text(data.get("wait_for"), "چاوەڕێی مەرجی دواتر بکە."),
+            "👀 چاوەڕێی چی بکەین؟",
+            clean_text(data.get("wait_for"), f"چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone ـی {zone_text}.") ,
+            "",
+            "📌 کورتەی کار:",
+            (
+                f"نرخ هێشتا لە Zone ـەکە دوورە؛ سەرەتا بگەڕێتەوە بۆ {zone_text}، "
+                "پاشان Retest و Confirmation ـی دروست لە M1/M5 چاوەڕێ بکە."
+                if not checks.get("price_at_zone", False) and zone
+                else "مەرجی دواتر لە سەرەوەیە؛ تا تەواوبوونی هەموو مەرجەکان هیچ BUY/SELL ـێک مەدە."
+            ),
         ]
 
     else:
