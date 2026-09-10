@@ -638,64 +638,37 @@ def download_telegram_photo(
 # MESSAGE HANDLER
 # ============================================================
 
-def handle_message(
-    message
-):
+def handle_message(message):
 
-    chat = message.get(
-        "chat",
-        {}
-    )
-
-    chat_id = chat.get(
-        "id"
-    )
+    chat = message.get("chat", {})
+    chat_id = chat.get("id")
 
     if not chat_id:
-
         return
 
+    user = message.get("from", {})
+    user_id = user.get("id")
 
-    user = message.get(
-        "from",
-        {}
-    )
-
-    user_id = user.get(
-        "id"
-    )
-
-
-    text = message.get(
-        "text",
-        ""
-    ).strip()
-
+    text = message.get("text", "").strip()
 
     # ========================================================
     # ADMIN COMMANDS FIRST
     # ========================================================
 
-    if is_admin(
-        user_id
-    ):
+    if is_admin(user_id):
 
         if handle_admin_command(
             message,
             chat_id,
             text
         ):
-
             return
 
-
     # ========================================================
-    # ACCESS REQUEST FOR UNAUTHORIZED USER
+    # ACCESS CONTROL
     # ========================================================
 
-    if not is_allowed(
-        user_id
-    ):
+    if not is_allowed(user_id):
 
         if text == "/start":
 
@@ -707,13 +680,8 @@ def handle_message(
 
             return
 
-
-        deny_access(
-            chat_id
-        )
-
+        deny_access(chat_id)
         return
-
 
     # ========================================================
     # START
@@ -721,19 +689,13 @@ def handle_message(
 
     if text == "/start":
 
-        USER_SESSIONS[
-            chat_id
-        ] = {
-
+        USER_SESSIONS[chat_id] = {
             "zone_image": None,
-
             "confirmation_image": None,
-
+            "state": "awaiting_htf",
         }
 
-
         telegram.send_message(
-
             chat_id,
 
             """
@@ -741,33 +703,25 @@ def handle_message(
 
 🧠 SNRZ Structure Engine چالاکە.
 
-سیستەم سەرەتا VS و VR ـی H1/H4 دەناسێت،
-پاشان نرخ چاوەڕێ دەکات بگەڕێتەوە بۆ Zone،
-دوای Pullback/Retest تەنها confirmation ـی M1/M5 دەپشکنێت.
-
 هەنگاوی 1️⃣:
 📸 H1 یان H4 ـی XAUUSD بنێرە.
 
-هەنگاوی 2️⃣:
-📸 M1 یان M5 ـی XAUUSD بنێرە.
+پاشان:
+📍 VS / VR → Zone → Pullback / Retest
 
-پاشان تەنها:
+کاتێک نرخ بگەڕێتەوە بۆ Zone:
+📸 chart ـێکی نوێی M1 یان M5 بنێرە.
 
-🟢 STRONG BUY
-🔴 STRONG SELL
+بۆتەکە هەمان Zone ـی H1/H4 دەپارێزێت
+و chart ـی نوێ وەک Retest / Confirmation شیکاری دەکات.
 
-یان:
+ئەگەر مەرجەکان تەواو نەبن:
 
 🟡 WAIT
-
-ئەگەر WAIT بوو،
-بۆتەکە هۆکاری WAIT و Zone Price ـەکە
-بە ڕوونی پیشان دەدات.
 """.strip()
         )
 
         return
-
 
     # ========================================================
     # HELP
@@ -776,7 +730,6 @@ def handle_message(
     if text == "/help":
 
         telegram.send_message(
-
             chat_id,
 
             """
@@ -798,14 +751,17 @@ Resistance → Down → NEW Support AFTER Resistance
 
 ZONE:
 VS/VR candle + previous candle
-→ compare body size
-→ shorter body wins
-→ entire candle HIGH-to-LOW = Zone
+→ shorter BODY
+→ entire HIGH-to-LOW = Zone
 
-PULLBACK:
-Zone
-→ wait for price to return/retest Zone
-→ ONLY THEN search for Confirmation
+FLOW:
+
+VS/VR
+→ Zone
+→ Pullback / Retest
+→ Confirmation
+→ Strong Signal
+→ Entry
 
 BUY:
 RBS / SRR / I.VR / PO2
@@ -813,35 +769,19 @@ RBS / SRR / I.VR / PO2
 SELL:
 SBR / RSS / I.VS / PO2
 
-🔥 Strong Signal:
-
-Score >= 80
-Confidence >= 80%
-RR >= 1:2
-Clear VS/VR
-Price has retested Zone
-Clear confirmation AFTER Pullback
-HTF + LTF agreement
-
-Sequence:
-
-VS/VR
-→ Zone
-→ Pullback / Retest
-→ Confirmation
-→ Strong Signal Check
-→ Entry
-
-ئەگەر مەرجەکان تەواو نەبن:
+ئەگەر نرخ هێشتا نەگەیشتووەتە Zone:
 
 🟡 WAIT
 
-هۆکاری WAIT + Zone Price بە ڕوونی پیشان دەدرێت.
+📸 کاتێک نرخ گەیشتە Zone،
+chart ـێکی نوێی M1/M5 بنێرە.
+
+بۆتەکە Zone ـی H1/H4 ـی پێشوو
+لەبیر ناکات.
 """.strip()
         )
 
         return
-
 
     # ========================================================
     # RESET
@@ -855,123 +795,318 @@ VS/VR
         )
 
         telegram.send_message(
-
             chat_id,
-
             "♻️ Session reset کرا. ئێستا H1 یان H4 بنێرە."
         )
 
         return
 
-
     # ========================================================
     # PHOTO
     # ========================================================
 
-    photo = download_telegram_photo(
-        message
-    )
-
+    photo = download_telegram_photo(message)
 
     if photo is not None:
 
         session = USER_SESSIONS.setdefault(
-
             chat_id,
-
             {
                 "zone_image": None,
                 "confirmation_image": None,
+                "state": "awaiting_htf",
             }
         )
 
+        state = session.get(
+            "state",
+            "awaiting_htf"
+        )
 
-        # ----------------------------------------------------
-        # FIRST IMAGE
-        # ----------------------------------------------------
+        # ====================================================
+        # FRESH RETEST CHART
+        # ====================================================
 
-        if session[
-            "zone_image"
-        ] is None:
+        if state == "waiting_retest_chart":
 
-            session[
-                "zone_image"
-            ] = photo
+            if session.get("zone_image") is None:
 
+                session["state"] = "awaiting_htf"
+
+                telegram.send_message(
+                    chat_id,
+                    """
+⚠️ Zone ـی پێشوو لە Session ـدا نییە.
+
+تکایە H1 یان H4 ـی نوێ بنێرە.
+""".strip()
+                )
+
+                return
+
+            session["confirmation_image"] = photo
 
             telegram.send_message(
+                chat_id,
 
+                """
+🔄 Fresh Chart وەرگیرا.
+
+📍 Zone ـی H1/H4 ـی پێشوو هەر پارێزراوە.
+
+ئێستا:
+
+VS/VR
+→ Zone Retest
+→ M1/M5 Confirmation
+→ Strong Signal Check
+
+شیکردنەوە دەکەم...
+""".strip()
+            )
+
+            try:
+
+                result = analyze_two_charts(
+                    session["zone_image"],
+                    session["confirmation_image"]
+                )
+
+                response_text = format_signal(result)
+
+                telegram.send_message(
+                    chat_id,
+                    response_text
+                )
+
+                # --------------------------------------------
+                # KEEP SESSION AGAIN IF STILL WAITING
+                # --------------------------------------------
+
+                signal = str(
+                    result.get(
+                        "signal",
+                        "WAIT"
+                    )
+                ).upper()
+
+                wait_for = str(
+                    result.get(
+                        "wait_for",
+                        ""
+                    )
+                )
+
+                zone_price = str(
+                    result.get(
+                        "zone_price",
+                        "N/A"
+                    )
+                )
+
+                waiting_for_zone = (
+                    signal == "WAIT"
+                    and zone_price.upper()
+                    not in (
+                        "N/A",
+                        "NONE",
+                        "UNKNOWN",
+                        ""
+                    )
+                    and (
+                        "بگەڕێتەوە" in wait_for
+                        or "بگاتە" in wait_for
+                        or "گەیشتە" in wait_for
+                        or "Zone" in wait_for
+                    )
+                )
+
+                if waiting_for_zone:
+
+                    session["state"] = (
+                        "waiting_retest_chart"
+                    )
+
+                    session["confirmation_image"] = None
+
+                else:
+
+                    USER_SESSIONS.pop(
+                        chat_id,
+                        None
+                    )
+
+            except Exception as exc:
+
+                logger.exception(
+                    "Fresh retest analysis failed."
+                )
+
+                telegram.send_message(
+                    chat_id,
+
+                    f"""
+❌ شیکردنەوەی Fresh Chart نەکرا.
+
+هۆکار:
+
+{exc}
+
+تکایە chart ـێکی M1 یان M5 ـی ڕوون بنێرە.
+""".strip()
+                )
+
+                session["confirmation_image"] = None
+
+            return
+
+        # ====================================================
+        # FIRST IMAGE — H1 / H4
+        # ====================================================
+
+        if session.get("zone_image") is None:
+
+            session["zone_image"] = photo
+            session["confirmation_image"] = None
+            session["state"] = "awaiting_confirmation"
+
+            telegram.send_message(
                 chat_id,
 
                 """
 ✅ H1/H4 وەرگیرا.
 
-🔎 ئێستا سەرەتا VS و VR ـەکان دەناسین.
+🔎 ئێستا VS و VR ـەکان دەناسین.
 
-پاشان:
-📍 چاوەڕێی Pullback / Retest بۆ Zone دەکەین،
-دوای ئەوە:
-📸 M1 یان M5 بۆ Confirmation.
+📍 پاشان چاوەڕێی Pullback / Retest بۆ Zone دەکەین.
+
+کاتێک نرخ گەیشتە Zone:
+
+📸 M1 یان M5 ـی نوێ بنێرە.
 """.strip()
             )
 
             return
 
+        # ====================================================
+        # SECOND IMAGE — M1 / M5
+        # ====================================================
 
-        # ----------------------------------------------------
-        # SECOND IMAGE
-        # ----------------------------------------------------
+        if session.get("confirmation_image") is None:
 
-        if session[
-            "confirmation_image"
-        ] is None:
-
-            session[
-                "confirmation_image"
-            ] = photo
-
+            session["confirmation_image"] = photo
 
             telegram.send_message(
-
                 chat_id,
 
                 """
 ⏳ هەردوو chart وەرگیرا.
 
 🧠 SNRZ Structure Engine
-VS / VR → Zone → Pullback → Confirmation → Score → Filters
+
+VS / VR
+→ Zone
+→ Pullback / Retest
+→ Confirmation
+→ Score
+→ Filters
 
 شیکردنەوە دەکەم...
 """.strip()
             )
 
-
             try:
 
                 result = analyze_two_charts(
-
-                    session[
-                        "zone_image"
-                    ],
-
-                    session[
-                        "confirmation_image"
-                    ]
+                    session["zone_image"],
+                    session["confirmation_image"]
                 )
 
-
-                response_text = format_signal(
-                    result
-                )
-
+                response_text = format_signal(result)
 
                 telegram.send_message(
-
                     chat_id,
-
                     response_text
                 )
 
+                signal = str(
+                    result.get(
+                        "signal",
+                        "WAIT"
+                    )
+                ).upper()
+
+                wait_for = str(
+                    result.get(
+                        "wait_for",
+                        ""
+                    )
+                )
+
+                zone_price = str(
+                    result.get(
+                        "zone_price",
+                        "N/A"
+                    )
+                )
+
+                # --------------------------------------------
+                # WAIT FOR PRICE TO RETURN TO ZONE
+                # --------------------------------------------
+
+                waiting_for_zone = (
+                    signal == "WAIT"
+                    and zone_price.upper()
+                    not in (
+                        "N/A",
+                        "NONE",
+                        "UNKNOWN",
+                        ""
+                    )
+                    and (
+                        "بگەڕێتەوە" in wait_for
+                        or "بگاتە" in wait_for
+                    )
+                )
+
+                if waiting_for_zone:
+
+                    # IMPORTANT:
+                    # KEEP H1/H4 IMAGE
+                    # DO NOT RESET SESSION
+
+                    session["state"] = (
+                        "waiting_retest_chart"
+                    )
+
+                    session["confirmation_image"] = None
+
+                    telegram.send_message(
+                        chat_id,
+
+                        f"""
+📍 Zone ـەکە هەر پارێزراوە:
+
+{zone_price}
+
+🟡 WAIT
+
+کاتێک نرخ گەیشتە/گەڕایەوە بۆ ئەم Zone ـە:
+
+📸 chart ـێکی نوێی M1 یان M5 بنێرە.
+
+⚠️ H1/H4 دووبارە مەبنێرە.
+بۆتەکە Zone ـی پێشوو هەڵدەگرێت.
+""".strip()
+                    )
+
+                else:
+
+                    # Normal completed analysis
+                    USER_SESSIONS.pop(
+                        chat_id,
+                        None
+                    )
 
             except Exception as exc:
 
@@ -979,9 +1114,7 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
                     "Analysis failed."
                 )
 
-
                 telegram.send_message(
-
                     chat_id,
 
                     f"""
@@ -991,32 +1124,32 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
 
 {exc}
 
-تکایە هەردوو chart ـەکە بە quality ـی باشتر دووبارە بنێرە.
+تکایە chart ـەکە بە quality ـی باشتر دووبارە بنێرە.
 """.strip()
                 )
 
-
-            USER_SESSIONS.pop(
-                chat_id,
-                None
-            )
+                session["confirmation_image"] = None
 
             return
 
-
         return
-
 
     # ========================================================
     # OTHER TEXT
     # ========================================================
 
     telegram.send_message(
-
         chat_id,
 
         """
-تکایە سەرەتا H1 یان H4 ـی XAUUSD بنێرە.
+تکایە:
+
+📸 H1 یان H4 ـی XAUUSD بنێرە.
+
+ئەگەر بۆتەکە پێشتر Zone ـی دۆزیوەتەوە
+و WAIT ـی داوە:
+
+📸 chart ـێکی نوێی M1/M5 بنێرە.
 
 یان:
 
@@ -1050,8 +1183,7 @@ def run():
     )
 
     logger.info(
-        f"Pending requests: "
-        f"{len(PENDING_ACCESS_REQUESTS)}"
+        f"Pending requests: {len(PENDING_ACCESS_REQUESTS)}"
     )
 
     logger.info(
@@ -1059,30 +1191,22 @@ def run():
     )
 
     logger.info(
-        f"Minimum confidence: "
-        f"{MIN_STRONG_CONFIDENCE}%"
+        f"Minimum confidence: {MIN_STRONG_CONFIDENCE}%"
     )
 
     logger.info(
         f"Minimum RR: 1:{MIN_RR}"
     )
 
-
-    # --------------------------------------------------------
+    # ========================================================
     # TELEGRAM CONNECTION
-    # --------------------------------------------------------
+    # ========================================================
 
     me = telegram.get_me()
 
     logger.info(
-        f"Telegram connected: "
-        f"@{me.get('username')}"
+        f"Telegram connected: @{me.get('username')}"
     )
-
-
-    # --------------------------------------------------------
-    # REMOVE WEBHOOK
-    # --------------------------------------------------------
 
     telegram.delete_webhook()
 
@@ -1090,9 +1214,7 @@ def run():
         "Telegram webhook removed."
     )
 
-
     offset = None
-
 
     # ========================================================
     # POLLING
@@ -1103,24 +1225,19 @@ def run():
         try:
 
             updates = telegram.get_updates(
-
                 offset=offset,
-
                 timeout=30
             )
-
 
             for update in updates:
 
                 offset = (
-                    update["update_id"]
-                    + 1
+                    update["update_id"] + 1
                 )
 
-
-                # ------------------------------------------------
+                # --------------------------------------------
                 # CALLBACK QUERY
-                # ------------------------------------------------
+                # --------------------------------------------
 
                 callback_query = update.get(
                     "callback_query"
@@ -1142,20 +1259,16 @@ def run():
 
                     continue
 
-
-                # ------------------------------------------------
+                # --------------------------------------------
                 # MESSAGE
-                # ------------------------------------------------
+                # --------------------------------------------
 
                 message = update.get(
                     "message"
                 )
 
-
                 if not message:
-
                     continue
-
 
                 try:
 
@@ -1169,17 +1282,9 @@ def run():
                         "Message handling error."
                     )
 
-
         except TelegramAPIError as exc:
 
-            error_text = str(
-                exc
-            )
-
-
-            # ------------------------------------------------
-            # 409 CONFLICT
-            # ------------------------------------------------
+            error_text = str(exc)
 
             if "409" in error_text:
 
@@ -1193,10 +1298,7 @@ def run():
                     "instance using this token."
                 )
 
-                time.sleep(
-                    10
-                )
-
+                time.sleep(10)
 
             else:
 
@@ -1205,10 +1307,7 @@ def run():
                     "Retrying in 5 seconds..."
                 )
 
-                time.sleep(
-                    5
-                )
-
+                time.sleep(5)
 
         except Exception:
 
@@ -1217,9 +1316,7 @@ def run():
                 "Retrying in 5 seconds..."
             )
 
-            time.sleep(
-                5
-            )
+            time.sleep(5)
 
 
 # ============================================================
