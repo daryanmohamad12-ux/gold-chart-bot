@@ -3404,18 +3404,6 @@ try:
 except Exception:
     logger.exception("Message handling error.")
 
-                      except Exception:
-
-            logger.exception(
-                "Unexpected error. "
-                "Retrying in 5 seconds..."
-            )
-
-            time.sleep(
-                5
-            )
-
-
 # ============================================================
 # START
 # ============================================================
