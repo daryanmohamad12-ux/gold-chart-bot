@@ -3394,10 +3394,15 @@ def run():
                     5
                 )
 
+message = update.get("message")
 
-                    handle_message(
-                        message
-                    )
+if not message:
+    continue
+
+try:
+    handle_message(message)
+except Exception:
+    logger.exception("Message handling error.")
 
                 except Exception:
 
