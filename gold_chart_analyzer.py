@@ -3465,3 +3465,23 @@ def run():
 if __name__ == "__main__":
 
     run()
+
+        except Exception:
+
+            logger.exception(
+                "Unexpected error. "
+                "Retrying in 5 seconds..."
+            )
+
+            time.sleep(
+                5
+            )
+
+
+# ============================================================
+# START
+# ============================================================
+
+if __name__ == "__main__":
+
+    run()
