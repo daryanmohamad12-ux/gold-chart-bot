@@ -3395,56 +3395,6 @@ def run():
                 )
 
 
-                    handle_message(
-                        message
-                    )
-
-                except Exception:
-
-                    logger.exception(
-                        "Message handling error."
-                    )
-
-
-        except TelegramAPIError as exc:
-
-            error_text = str(
-                exc
-            )
-
-
-            # ------------------------------------------------
-            # 409 CONFLICT
-            # ------------------------------------------------
-
-            if "409" in error_text:
-
-                logger.error(
-                    "Telegram 409 Conflict: "
-                    "another bot instance is running."
-                )
-
-                logger.error(
-                    "Stop every other running "
-                    "instance using this token."
-                )
-
-                time.sleep(
-                    10
-                )
-
-
-            else:
-
-                logger.exception(
-                    "Telegram polling error. "
-                    "Retrying in 5 seconds..."
-                )
-
-                time.sleep(
-                    5
-                )
-
 
         except Exception:
 
@@ -3466,16 +3416,6 @@ if __name__ == "__main__":
 
     run()
 
-        except Exception:
-
-            logger.exception(
-                "Unexpected error. "
-                "Retrying in 5 seconds..."
-            )
-
-            time.sleep(
-                5
-            )
 
 
 # ============================================================
