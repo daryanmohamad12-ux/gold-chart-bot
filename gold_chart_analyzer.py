@@ -3314,16 +3314,17 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
                     )
                 ):
 
-                    USER_SESSIONS[
-                        chat_id
-                    ] = {
+                           session = USER_SESSIONS.setdefault(
 
-                        "zone_image": None,
+            chat_id,
 
-                        "confirmation_image": None,
+            {
+                "zone_image": None,
+                "confirmation_image": None,
+                "locked_setup": None,
+            }
 
-                        "locked_setup": {
-
+        )
                             "signal":
                                 result.get(
                                     "signal",
