@@ -1,4 +1,5 @@
 name: Gold Chart Bot
+
 on:
   workflow_dispatch:
   push:
