@@ -1,5 +1,4 @@
 name: Gold Chart Bot
-
 on:
   workflow_dispatch:
   push:
@@ -20,11 +19,21 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: Run bot
+      - name: Run bot for 24 hours
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GEMINI_MODEL: gemini-3.6-flash
-        run: timeout 19800s python gold_chart_analyzer.py
+        run: |
+          timeout --signal=SIGTERM --kill-after=30s 86400s python gold_chart_analyzer.py
+        continue-on-error: true
+
+      - name: Restart workflow
+        if: always()
+        run: |
+          echo "Bot run finished. Workflow can be started again."
+```
