@@ -3120,7 +3120,7 @@ VS/VR
         return
 
 
-    # ========================================================
+       # ========================================================
     # PHOTO
     # ========================================================
 
@@ -3128,36 +3128,27 @@ VS/VR
         message
     )
 
-
     if photo is not None:
 
         session = USER_SESSIONS.setdefault(
-
             chat_id,
             {
                 "zone_image": None,
                 "confirmation_image": None,
                 "locked_setup": None,
             }
-
+        )
 
         # ----------------------------------------------------
         # FIRST IMAGE
         # ----------------------------------------------------
 
-        if session[
-            "zone_image"
-        ] is None:
+        if session["zone_image"] is None:
 
-            session[
-                "zone_image"
-            ] = photo
-
+            session["zone_image"] = photo
 
             telegram.send_message(
-
                 chat_id,
-
                 """
 ✅ H1/H4 وەرگیرا.
 
@@ -3172,24 +3163,16 @@ VS/VR
 
             return
 
-
         # ----------------------------------------------------
         # SECOND IMAGE
         # ----------------------------------------------------
 
-        if session[
-            "confirmation_image"
-        ] is None:
+        if session["confirmation_image"] is None:
 
-            session[
-                "confirmation_image"
-            ] = photo
-
+            session["confirmation_image"] = photo
 
             telegram.send_message(
-
                 chat_id,
-
                 """
 ⏳ هەردوو chart وەرگیرا.
 
@@ -3200,36 +3183,138 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
 """.strip()
             )
 
-
             try:
+
                 result = analyze_two_charts(
-
-                    session[
-                        "zone_image"
-                    ],
-
-                    session[
-                        "confirmation_image"
-                    ],
-
-                    session.get(
-                        "locked_setup"
-                    )
+                    session["zone_image"],
+                    session["confirmation_image"],
+                    session.get("locked_setup")
                 )
-
 
                 response_text = format_signal(
                     result
                 )
 
-
                 telegram.send_message(
-
                     chat_id,
-
                     response_text
                 )
 
+                # ------------------------------------------------
+                # LOCK VALID WAIT ZONE
+                # ------------------------------------------------
+
+                if str(
+                    result.get(
+                        "signal",
+                        "WAIT"
+                    )
+                ).upper() == "WAIT":
+
+                    zone_price = str(
+                        result.get(
+                            "zone_price",
+                            "N/A"
+                        )
+                    ).strip()
+
+                    zone = str(
+                        result.get(
+                            "zone",
+                            ""
+                        )
+                    ).strip()
+
+                    if (
+                        zone
+                        and zone.upper()
+                        not in (
+                            "N/A",
+                            "NONE",
+                            "UNKNOWN"
+                        )
+                        and zone_price
+                        and zone_price.upper()
+                        not in (
+                            "N/A",
+                            "NONE",
+                            "UNKNOWN"
+                        )
+                    ):
+
+                        USER_SESSIONS[
+                            chat_id
+                        ] = {
+
+                            "zone_image": None,
+
+                            "confirmation_image": None,
+
+                            "locked_setup": {
+
+                                "signal":
+                                    result.get(
+                                        "signal",
+                                        "WAIT"
+                                    ),
+
+                                "setup":
+                                    result.get(
+                                        "setup",
+                                        ""
+                                    ),
+
+                                "zone":
+                                    zone,
+
+                                "zone_price":
+                                    zone_price,
+
+                                "vs_detected":
+                                    result.get(
+                                        "vs_detected",
+                                        ""
+                                    ),
+
+                                "vr_detected":
+                                    result.get(
+                                        "vr_detected",
+                                        ""
+                                    ),
+
+                                "htf_zones":
+                                    result.get(
+                                        "htf_zones",
+                                        ""
+                                    ),
+
+                                "wait_for":
+                                    result.get(
+                                        "wait_for",
+                                        ""
+                                    ),
+
+                                "reasoning":
+                                    result.get(
+                                        "reasoning",
+                                        ""
+                                    )
+                            }
+                        }
+
+                    else:
+
+                        USER_SESSIONS.pop(
+                            chat_id,
+                            None
+                        )
+
+                else:
+
+                    USER_SESSIONS.pop(
+                        chat_id,
+                        None
+                    )
 
             except Exception as exc:
 
@@ -3237,11 +3322,8 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
                     "Analysis failed."
                 )
 
-
                 telegram.send_message(
-
                     chat_id,
-
                     f"""
 ❌ شیکردنەوەکە نەکرا.
 
@@ -3252,131 +3334,6 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
 تکایە هەردوو chart ـەکە بە quality ـی باشتر دووبارە بنێرە.
 """.strip()
                 )
-
-
-                      # ====================================================
-            # SAVE LOCKED ZONE AFTER WAIT
-            # ====================================================
-
-            if str(
-                result.get(
-                    "signal",
-                    "WAIT"
-                )
-            ).upper() == "WAIT":
-
-                zone_price = str(
-                    result.get(
-                        "zone_price",
-                        "N/A"
-                    )
-                ).strip()
-
-                zone = str(
-                    result.get(
-                        "zone",
-                        ""
-                    )
-                ).strip()
-
-                vs_detected = str(
-                    result.get(
-                        "vs_detected",
-                        ""
-                    )
-                ).strip()
-
-                vr_detected = str(
-                    result.get(
-                        "vr_detected",
-                        ""
-                    )
-                ).strip()
-
-                # -----------------------------------------------
-                # Only lock when a real Zone exists
-                # -----------------------------------------------
-
-                if (
-                    zone
-                    and zone.upper()
-                    not in (
-                        "N/A",
-                        "NONE",
-                        "UNKNOWN"
-                    )
-                    and zone_price
-                    and zone_price.upper()
-                    not in (
-                        "N/A",
-                        "NONE",
-                        "UNKNOWN"
-                    )
-                ):
-
-                           session = USER_SESSIONS.setdefault(
-
-            chat_id,
-
-            {
-                "zone_image": None,
-                "confirmation_image": None,
-                "locked_setup": None,
-            }
-
-        )
-                            "signal":
-                                result.get(
-                                    "signal",
-                                    "WAIT"
-                                ),
-
-                            "setup":
-                                result.get(
-                                    "setup",
-                                    ""
-                                ),
-
-                            "zone":
-                                zone,
-
-                            "zone_price":
-                                zone_price,
-
-                            "vs_detected":
-                                vs_detected,
-
-                            "vr_detected":
-                                vr_detected,
-
-                            "htf_zones":
-                                result.get(
-                                    "htf_zones",
-                                    ""
-                                ),
-
-                            "wait_for":
-                                result.get(
-                                    "wait_for",
-                                    ""
-                                ),
-
-                            "reasoning":
-                                result.get(
-                                    "reasoning",
-                                    ""
-                                )
-                        }
-                    }
-
-                else:
-
-                    USER_SESSIONS.pop(
-                        chat_id,
-                        None
-                    )
-
-            else:
 
                 USER_SESSIONS.pop(
                     chat_id,
