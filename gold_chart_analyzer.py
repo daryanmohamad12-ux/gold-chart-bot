@@ -2970,13 +2970,13 @@ def handle_message(
         return
 
 
-    # ========================================================
+      # ========================================================
     # START
     # ========================================================
 
     if text == "/start":
 
-             USER_SESSIONS[
+        USER_SESSIONS[
             chat_id
         ] = {
 
@@ -2987,7 +2987,6 @@ def handle_message(
             "locked_setup": None,
 
         }
-
 
         telegram.send_message(
 
