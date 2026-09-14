@@ -19,10 +19,16 @@ from google import genai
 # ============================================================
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
-GEMINI_FALLBACK_MODELS = [
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+
+# Default fallback chain:
+# 3.8 -> 3.7 -> 3.6
+# You can override it with GEMINI_FALLBACK_MODELS in GitHub Secrets/Variables.
+_DEFAULT_FALLBACK_MODELS = ["gemini-3.7-flash", "gemini-3.6-flash"]
+_env_fallback = [
     x.strip() for x in os.getenv("GEMINI_FALLBACK_MODELS", "").split(",") if x.strip()
 ]
+GEMINI_FALLBACK_MODELS = _env_fallback or _DEFAULT_FALLBACK_MODELS
 GEMINI_MAX_RETRIES = max(1, int(os.getenv("GEMINI_MAX_RETRIES", "2")))
 GEMINI_BASE_RETRY_DELAY = max(5, int(os.getenv("GEMINI_BASE_RETRY_DELAY", "25")))
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -418,6 +424,14 @@ def gemini_request(user_prompt, zone_b64, confirmation_b64):
                 logger.error("Gemini error: model=%s attempt=%s: %s", model, attempt, exc)
                 if not is_retryable_gemini_error(exc):
                     break
+
+                # A quota/rate-limit error is usually model-specific.
+                # Do NOT waste all retries on the same model; move to the
+                # next fallback model first.
+                if "429" in str(exc) or "quota" in str(exc).lower() or "too many requests" in str(exc).lower():
+                    logger.warning("Quota/rate limit on %s. Switching to next model.", model)
+                    break
+
                 if attempt < GEMINI_MAX_RETRIES:
                     suggested = extract_retry_seconds(exc)
                     delay = suggested if suggested is not None else GEMINI_BASE_RETRY_DELAY * (2 ** (attempt - 1))
