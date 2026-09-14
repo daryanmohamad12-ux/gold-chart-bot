@@ -2441,7 +2441,8 @@ def strong_signal_engine(data):
 
 def analyze_two_charts(
     zone_image,
-    confirmation_image
+    confirmation_image,
+    locked_setup=None
 ):
 
     zone_base64 = base64.b64encode(
@@ -2551,7 +2552,76 @@ Example:
 
 "wait_for": "چاوەڕێ بکە نرخ بگەڕێتەوە بۆ Zone ـی 2380.00 - 2382.00."
 
-Do not invent prices.
+    Do not invent prices.
+
+============================================================
+LOCKED ZONE — CRITICAL
+============================================================
+
+If LOCKED SETUP is provided below:
+
+You MUST keep using the SAME previously identified
+VS/VR and SAME Zone.
+
+DO NOT search for a new Zone.
+
+DO NOT replace the previous Zone with another Zone.
+
+The new charts are ONLY for checking the progress
+of the SAME setup:
+
+LOCKED VS/VR
+→ SAME ZONE
+→ PRICE RETURN / RETEST
+→ M1/M5 CONFIRMATION
+→ STRONG SIGNAL
+
+If price has NOT reached the locked Zone:
+
+WAIT.
+
+If price reaches the locked Zone but confirmation
+is missing:
+
+WAIT.
+
+If confirmation is invalid:
+
+WAIT.
+
+If the locked setup is still structurally valid,
+PRESERVE the same:
+
+VS/VR
+Zone
+Zone Price
+
+Do NOT choose another nearby or newer Zone.
+
+Only abandon the locked Zone if the SAME setup is
+clearly invalidated by price structure.
+
+If the locked Zone is not visible on the new chart,
+DO NOT create a new Zone.
+Keep the locked Zone and WAIT.
+
+============================================================
+LOCKED SETUP
+============================================================
+"""
+
+    if locked_setup:
+
+        user_prompt += (
+            "\n"
+            + json.dumps(
+                locked_setup,
+                ensure_ascii=False,
+                indent=2
+            )
+        )
+
+    user_prompt += """
 
 Return ONLY valid JSON.
 """
@@ -2906,13 +2976,15 @@ def handle_message(
 
     if text == "/start":
 
-        USER_SESSIONS[
+             USER_SESSIONS[
             chat_id
         ] = {
 
             "zone_image": None,
 
             "confirmation_image": None,
+
+            "locked_setup": None,
 
         }
 
@@ -3063,12 +3135,11 @@ VS/VR
         session = USER_SESSIONS.setdefault(
 
             chat_id,
-
             {
                 "zone_image": None,
                 "confirmation_image": None,
+                "locked_setup": None,
             }
-        )
 
 
         # ----------------------------------------------------
@@ -3132,7 +3203,6 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
 
 
             try:
-
                 result = analyze_two_charts(
 
                     session[
@@ -3141,7 +3211,11 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
 
                     session[
                         "confirmation_image"
-                    ]
+                    ],
+
+                    session.get(
+                        "locked_setup"
+                    )
                 )
 
 
@@ -3181,16 +3255,135 @@ VS / VR → Zone → Pullback → Confirmation → Score → Filters
                 )
 
 
-            USER_SESSIONS.pop(
-                chat_id,
-                None
-            )
+                      # ====================================================
+            # SAVE LOCKED ZONE AFTER WAIT
+            # ====================================================
+
+            if str(
+                result.get(
+                    "signal",
+                    "WAIT"
+                )
+            ).upper() == "WAIT":
+
+                zone_price = str(
+                    result.get(
+                        "zone_price",
+                        "N/A"
+                    )
+                ).strip()
+
+                zone = str(
+                    result.get(
+                        "zone",
+                        ""
+                    )
+                ).strip()
+
+                vs_detected = str(
+                    result.get(
+                        "vs_detected",
+                        ""
+                    )
+                ).strip()
+
+                vr_detected = str(
+                    result.get(
+                        "vr_detected",
+                        ""
+                    )
+                ).strip()
+
+                # -----------------------------------------------
+                # Only lock when a real Zone exists
+                # -----------------------------------------------
+
+                if (
+                    zone
+                    and zone.upper()
+                    not in (
+                        "N/A",
+                        "NONE",
+                        "UNKNOWN"
+                    )
+                    and zone_price
+                    and zone_price.upper()
+                    not in (
+                        "N/A",
+                        "NONE",
+                        "UNKNOWN"
+                    )
+                ):
+
+                    USER_SESSIONS[
+                        chat_id
+                    ] = {
+
+                        "zone_image": None,
+
+                        "confirmation_image": None,
+
+                        "locked_setup": {
+
+                            "signal":
+                                result.get(
+                                    "signal",
+                                    "WAIT"
+                                ),
+
+                            "setup":
+                                result.get(
+                                    "setup",
+                                    ""
+                                ),
+
+                            "zone":
+                                zone,
+
+                            "zone_price":
+                                zone_price,
+
+                            "vs_detected":
+                                vs_detected,
+
+                            "vr_detected":
+                                vr_detected,
+
+                            "htf_zones":
+                                result.get(
+                                    "htf_zones",
+                                    ""
+                                ),
+
+                            "wait_for":
+                                result.get(
+                                    "wait_for",
+                                    ""
+                                ),
+
+                            "reasoning":
+                                result.get(
+                                    "reasoning",
+                                    ""
+                                )
+                        }
+                    }
+
+                else:
+
+                    USER_SESSIONS.pop(
+                        chat_id,
+                        None
+                    )
+
+            else:
+
+                USER_SESSIONS.pop(
+                    chat_id,
+                    None
+                )
 
             return
-
-
-        return
-
 
     # ========================================================
     # OTHER TEXT
@@ -3406,16 +3599,6 @@ def run():
             time.sleep(
                 5
             )
-
-
-# ============================================================
-# START
-# ============================================================
-
-if __name__ == "__main__":
-
-    run()
-
 
 
 # ============================================================
