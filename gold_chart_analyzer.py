@@ -34,7 +34,39 @@ GEMINI_BASE_RETRY_DELAY = max(5, int(os.getenv("GEMINI_BASE_RETRY_DELAY", "25"))
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 ADMIN_USER_ID = 5874840448
-ACCESS_FILE = "allowed_users.json"
+ACCESS_FILE = "allowed_users.json"    try:
+        raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
+        result = json.loads(clean_json(raw))
+
+        if locked_setup:
+            locked_zone = str(locked_setup.get("zone", "")).strip()
+            locked_zone_price = str(locked_setup.get("zone_price", "")).strip()
+            locked_vs = str(locked_setup.get("vs_detected", "")).strip()
+            locked_vr = str(locked_setup.get("vr_detected", "")).strip()
+            locked_htf = str(locked_setup.get("htf_zones", "")).strip()
+
+            if locked_zone and locked_zone.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["zone"] = locked_zone
+
+        if locked_zone_price and locked_zone_price.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["zone_price"] = locked_zone_price
+
+            if locked_vs and locked_vs.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["vs_detected"] = locked_vs
+
+            if locked_vr and locked_vr.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["vr_detected"] = locked_vr
+
+            if locked_htf and locked_htf.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["htf_zones"] = locked_htf
+
+            logger.info(
+                "LOCKED SETUP ENFORCED | Zone=%s | Zone Price=%s | VS=%s | VR=%s",
+                result.get("zone"),
+                result.get("zone_price"),
+                result.get("vs_detected"),
+                result.get("vr_detected"),
+            )
 
 MIN_STRONG_SCORE = 80
 MIN_STRONG_CONFIDENCE = 80
@@ -567,10 +599,39 @@ Return ONLY JSON.
         user_prompt += "\nLOCKED SETUP — preserve the same VS/VR and SAME Zone. Do not replace it with a new nearby zone:\n"
         user_prompt += json.dumps(locked_setup, ensure_ascii=False, indent=2)
 
-    try:
-     raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
-     result = json.loads(clean_json(raw))
-    if locked_setup:
+        try:
+        raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
+        result = json.loads(clean_json(raw))
+
+        if locked_setup:
+            locked_zone = str(locked_setup.get("zone", "")).strip()
+            locked_zone_price = str(locked_setup.get("zone_price", "")).strip()
+            locked_vs = str(locked_setup.get("vs_detected", "")).strip()
+            locked_vr = str(locked_setup.get("vr_detected", "")).strip()
+            locked_htf = str(locked_setup.get("htf_zones", "")).strip()
+
+            if locked_zone and locked_zone.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["zone"] = locked_zone
+
+            if locked_zone_price and locked_zone_price.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["zone_price"] = locked_zone_price
+
+            if locked_vs and locked_vs.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["vs_detected"] = locked_vs
+
+            if locked_vr and locked_vr.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["vr_detected"] = locked_vr
+
+            if locked_htf and locked_htf.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+                result["htf_zones"] = locked_htf
+
+            logger.info(
+                "LOCKED SETUP ENFORCED | Zone=%s | Zone Price=%s | VS=%s | VR=%s",
+                result.get("zone"),
+                result.get("zone_price"),
+                result.get("vs_detected"),
+                result.get("vr_detected"),
+            )
 # ============================================================
 # HARD LOCK: never allow Gemini to replace a locked setup
 # ============================================================
