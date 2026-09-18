@@ -281,15 +281,58 @@ def confirmation_is_valid(signal, confirmation):
     return False
 
 
+def _positive_structure_text(value):
+    text = str(value or "").strip().upper()
+
+    negative_words = (
+        "NO ",
+        "NONE",
+        "N/A",
+        "NOT ",
+        "INVALID",
+        "UNCONFIRMED",
+        "UNCLEAR",
+        "UNKNOWN",
+        "NEVER",
+        "FALSE",
+    )
+
+    if not text:
+        return False
+
+    for word in negative_words:
+        if word in text:
+            return False
+
+    return True
+
+
 def validate_vs_vr(data, signal):
-    vs = str(data.get("vs_detected", "")).upper()
-    vr = str(data.get("vr_detected", "")).upper()
-    zones = str(data.get("htf_zones", "")).upper()
-    zone = str(data.get("zone", "")).upper()
+    signal = str(signal or "WAIT").upper()
+
+    vs = str(data.get("vs_detected", "") or "")
+    vr = str(data.get("vr_detected", "") or "")
+    zones = str(data.get("htf_zones", "") or "")
+    zone = str(data.get("zone", "") or "")
+
     if signal == "BUY":
-        return "VS" in vs or "I.VR" in vs or "VS" in zones or "VS" in zone
+        return (
+            ("VS" in vs.upper() and _positive_structure_text(vs))
+            or
+            ("VS" in zones.upper() and _positive_structure_text(zones))
+            or
+            ("VS" in zone.upper() and _positive_structure_text(zone))
+        )
+
     if signal == "SELL":
-        return "VR" in vr or "I.VS" in vr or "VR" in zones or "VR" in zone
+        return (
+            ("VR" in vr.upper() and _positive_structure_text(vr))
+            or
+            ("VR" in zones.upper() and _positive_structure_text(zones))
+            or
+            ("VR" in zone.upper() and _positive_structure_text(zone))
+        )
+
     return False
 
 
@@ -454,6 +497,49 @@ def analyze_two_charts(zone_image, confirmation_image, locked_setup=None):
     confirmation_b64 = base64.b64encode(confirmation_image).decode("utf-8")
 
     user_prompt = """
+    VERY IMPORTANT VS/VR DETECTION RULE:
+
+Do NOT say "no VS/VR" merely because the chart contains multiple structures.
+
+You must scan the ENTIRE H1/H4 chart from left to right and identify EVERY candidate structure.
+
+A chart may contain:
+- multiple VS candidates
+- multiple VR candidates
+- both VS and VR on the same chart
+
+For each candidate, check the COMPLETE sequence.
+
+VALID VS:
+1. Support exists.
+2. Price moves UP from that Support.
+3. A NEW Resistance is created AFTER that Support.
+4. Price moves UP again.
+5. The SAME NEW Resistance is broken with body acceptance.
+Only then mark that Support as VALID VS.
+
+VALID VR:
+1. Resistance exists.
+2. Price moves DOWN from that Resistance.
+3. A NEW Support is created AFTER that Resistance.
+4. Price moves DOWN again.
+5. The SAME NEW Support is broken with body acceptance.
+Only then mark that Resistance as VALID VR.
+
+A previous Resistance before the Support MUST NOT invalidate a VS.
+A previous Support before the Resistance MUST NOT invalidate a VR.
+
+If there are 2 VS and 1 VR candidates, inspect all 3 independently.
+Do NOT return "no VS/VR" unless every candidate fails the complete sequence.
+
+For each detected structure, state:
+- type
+- original zone
+- formation sequence
+- break confirmation
+- validity
+
+Only after identifying valid VS/VR, determine the Zone.
 Analyze both XAUUSD chart images.
 IMAGE 1 = H1/H4. IMAGE 2 = M1/M5.
 
@@ -484,6 +570,39 @@ Return ONLY JSON.
     try:
         raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
         result = json.loads(clean_json(raw))
+# ============================================================
+# HARD LOCK: never allow Gemini to replace a locked setup
+# ============================================================
+if locked_setup:
+    locked_zone = str(locked_setup.get("zone", "")).strip()
+    locked_zone_price = str(locked_setup.get("zone_price", "")).strip()
+    locked_vs = str(locked_setup.get("vs_detected", "")).strip()
+    locked_vr = str(locked_setup.get("vr_detected", "")).strip()
+    locked_htf = str(locked_setup.get("htf_zones", "")).strip()
+
+    if locked_zone and locked_zone.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+        result["zone"] = locked_zone
+
+    if locked_zone_price and locked_zone_price.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+        result["zone_price"] = locked_zone_price
+
+    if locked_vs and locked_vs.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+        result["vs_detected"] = locked_vs
+
+    if locked_vr and locked_vr.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+        result["vr_detected"] = locked_vr
+
+    if locked_htf and locked_htf.upper() not in {"N/A", "NONE", "UNKNOWN"}:
+        result["htf_zones"] = locked_htf
+
+    logger.info(
+        "🔒 LOCKED SETUP ENFORCED | Zone=%s | Zone Price=%s | VS=%s | VR=%s",
+        result.get("zone"),
+        result.get("zone_price"),
+        result.get("vs_detected"),
+        result.get("vr_detected"),
+    )
+    
         return strong_signal_engine(result)
     except json.JSONDecodeError as exc:
         logger.exception("Invalid JSON returned by Gemini.")
