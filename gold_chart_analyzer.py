@@ -568,8 +568,9 @@ Return ONLY JSON.
         user_prompt += json.dumps(locked_setup, ensure_ascii=False, indent=2)
 
     try:
-        raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
-        result = json.loads(clean_json(raw))
+     raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
+     result = json.loads(clean_json(raw))
+    if locked_setup:
 # ============================================================
 # HARD LOCK: never allow Gemini to replace a locked setup
 # ============================================================
