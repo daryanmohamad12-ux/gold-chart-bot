@@ -34,7 +34,7 @@ GEMINI_BASE_RETRY_DELAY = max(5, int(os.getenv("GEMINI_BASE_RETRY_DELAY", "25"))
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 ADMIN_USER_ID = 5874840448
-ACCESS_FILE = "allowed_users.json"    try:
+ACCESS_FILE = "allowed_users.json"
         raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
         result = json.loads(clean_json(raw))
 
