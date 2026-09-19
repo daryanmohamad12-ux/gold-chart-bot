@@ -35,38 +35,6 @@ MAX_IMAGE_BYTES = 10 * 1024 * 1024
 
 ADMIN_USER_ID = 5874840448
 ACCESS_FILE = "allowed_users.json"
-        raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
-        result = json.loads(clean_json(raw))
-
-        if locked_setup:
-            locked_zone = str(locked_setup.get("zone", "")).strip()
-            locked_zone_price = str(locked_setup.get("zone_price", "")).strip()
-            locked_vs = str(locked_setup.get("vs_detected", "")).strip()
-            locked_vr = str(locked_setup.get("vr_detected", "")).strip()
-            locked_htf = str(locked_setup.get("htf_zones", "")).strip()
-
-            if locked_zone and locked_zone.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-                result["zone"] = locked_zone
-
-        if locked_zone_price and locked_zone_price.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-                result["zone_price"] = locked_zone_price
-
-            if locked_vs and locked_vs.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-                result["vs_detected"] = locked_vs
-
-            if locked_vr and locked_vr.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-                result["vr_detected"] = locked_vr
-
-            if locked_htf and locked_htf.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-                result["htf_zones"] = locked_htf
-
-            logger.info(
-                "LOCKED SETUP ENFORCED | Zone=%s | Zone Price=%s | VS=%s | VR=%s",
-                result.get("zone"),
-                result.get("zone_price"),
-                result.get("vs_detected"),
-                result.get("vr_detected"),
-            )
 
 MIN_STRONG_SCORE = 80
 MIN_STRONG_CONFIDENCE = 80
@@ -307,9 +275,9 @@ def calculate_rr(data):
 def confirmation_is_valid(signal, confirmation):
     c = str(confirmation).upper()
     if signal == "BUY":
-        return any(x in c for x in ("RBS", "SRR", "I.VR", "PO2"))
+        return any(x in c for x in ("RBS", "SRR", "I.VR")) or ("PO2" in c and "COMPLETE" in c)
     if signal == "SELL":
-        return any(x in c for x in ("SBR", "RSS", "I.VS", "PO2"))
+        return any(x in c for x in ("SBR", "RSS", "I.VS")) or ("PO2" in c and "COMPLETE" in c)
     return False
 
 
@@ -599,7 +567,7 @@ Return ONLY JSON.
         user_prompt += "\nLOCKED SETUP — preserve the same VS/VR and SAME Zone. Do not replace it with a new nearby zone:\n"
         user_prompt += json.dumps(locked_setup, ensure_ascii=False, indent=2)
 
-        try:
+    try:
         raw = gemini_request(user_prompt, zone_b64, confirmation_b64)
         result = json.loads(clean_json(raw))
 
@@ -632,39 +600,6 @@ Return ONLY JSON.
                 result.get("vs_detected"),
                 result.get("vr_detected"),
             )
-# ============================================================
-# HARD LOCK: never allow Gemini to replace a locked setup
-# ============================================================
-if locked_setup:
-    locked_zone = str(locked_setup.get("zone", "")).strip()
-    locked_zone_price = str(locked_setup.get("zone_price", "")).strip()
-    locked_vs = str(locked_setup.get("vs_detected", "")).strip()
-    locked_vr = str(locked_setup.get("vr_detected", "")).strip()
-    locked_htf = str(locked_setup.get("htf_zones", "")).strip()
-
-    if locked_zone and locked_zone.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-        result["zone"] = locked_zone
-
-    if locked_zone_price and locked_zone_price.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-        result["zone_price"] = locked_zone_price
-
-    if locked_vs and locked_vs.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-        result["vs_detected"] = locked_vs
-
-    if locked_vr and locked_vr.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-        result["vr_detected"] = locked_vr
-
-    if locked_htf and locked_htf.upper() not in {"N/A", "NONE", "UNKNOWN"}:
-        result["htf_zones"] = locked_htf
-
-    logger.info(
-        "🔒 LOCKED SETUP ENFORCED | Zone=%s | Zone Price=%s | VS=%s | VR=%s",
-        result.get("zone"),
-        result.get("zone_price"),
-        result.get("vs_detected"),
-        result.get("vr_detected"),
-    )
-    
         return strong_signal_engine(result)
     except json.JSONDecodeError as exc:
         logger.exception("Invalid JSON returned by Gemini.")
